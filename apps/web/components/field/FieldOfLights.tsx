@@ -3,15 +3,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { generateDemoLights, type DemoLight } from "../../lib/demo-names";
-import { OUTLINE, CITIES } from "../../lib/odesa-geo";
+import { OUTLINE, RAIONS, CITIES, FIELD_CX, FIELD_CY, type Ring } from "../../lib/odesa-geo";
 
 /**
- * Поле вогнів над Одеською областю. Справжній контур регіону
- * (geoBoundaries ADM1), реальні міста, Чорне море — і вогник за кожним
- * ім’ям. Одне полотно — головна, реєстр і навігація.
+ * Поле вогнів над Одеською областю. Справжня географія (geoBoundaries):
+ * контур області, райони, громади — і вогник за кожним ім’ям.
  *
- * Продуктивність: сяйво вогнів малюється одним пре-рендереним спрайтом
- * (drawImage), а не сотнями радіальних градієнтів на кадр.
+ * Рішення щодо продуктивності:
+ *  · сяйво вогнів — один пре-рендерений спрайт (drawImage), не градієнти;
+ *  · берегова лінія — квадратичні криві через середини ребер (м’яко);
+ *    адмінмежі — прямі відрізки, бо кордони реально ламані;
+ *  · громади (429 полігонів) вантажаться з /geo/hromadas.json лише при
+ *    наближенні й відсікаються за bbox;
+ *  · цикл зупиняється, коли поле поза в’юпортом.
+ *
+ * Прокрутка: звичайне колесо гортає сторінку (щоб хіро не «крав» скрол),
+ * наближення — ⌘/Ctrl + колесо, кнопки або подвійний клік.
  */
 
 export interface RealLight {
@@ -40,10 +47,32 @@ interface Cam {
   z: number;
 }
 
+interface Bounded {
+  ring: Ring;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
 const MIN_Z = 0.8;
-const MAX_Z = 14;
+const MAX_Z = 16;
 const NAME_Z = 5.2;
-const FIELD_CX = 0.34; // центр контуру по x (поле нормоване 0..~0.67 × 0..1)
+const RAION_Z = 1.5; // від цього масштабу проявляються райони
+const HROMADA_Z = 3.0; // …і громади
+
+const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+function bounds(ring: Ring): Bounded {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of ring) {
+    if (x < x0) x0 = x;
+    if (y < y0) y0 = y;
+    if (x > x1) x1 = x;
+    if (y > y1) y1 = y;
+  }
+  return { ring, x0, y0, x1, y1 };
+}
 
 /** Пре-рендер спрайта сяйва: тепле ядро + м’який ореол. */
 function makeGlowSprite(warm: boolean): HTMLCanvasElement {
@@ -65,19 +94,25 @@ function makeGlowSprite(warm: boolean): HTMLCanvasElement {
 export function FieldOfLights({ real }: { real: RealLight[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const camRef = useRef<Cam>({ x: FIELD_CX, y: 0.5, z: 0.9 });
-  const targetRef = useRef<Cam>({ x: FIELD_CX, y: 0.5, z: 0.9 });
+  const camRef = useRef<Cam>({ x: FIELD_CX, y: FIELD_CY, z: 0.9 });
+  const targetRef = useRef<Cam>({ x: FIELD_CX, y: FIELD_CY, z: 0.9 });
   const dragRef = useRef<{ px: number; py: number; moved: boolean } | null>(null);
   const hoverRef = useRef<Light | null>(null);
   const rafRef = useRef(0);
   const reduceRef = useRef(false);
+  const hromadasRef = useRef<Bounded[] | null>(null);
+  const hromadaLoadRef = useRef(false);
+  const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [selected, setSelected] = useState<Light | null>(null);
   const [query, setQuery] = useState("");
   const [immersed, setImmersed] = useState(false);
+  const [scrollHint, setScrollHint] = useState(false);
   const immersedRef = useRef(false);
   const queryRef = useRef("");
   queryRef.current = query.trim().toLowerCase();
+
+  const raions = useMemo(() => RAIONS.map(bounds), []);
 
   const lights = useMemo<Light[]>(() => {
     const demo = generateDemoLights(420).map((d: DemoLight, i: number) => ({
@@ -85,7 +120,6 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
       phase: (i * 137.5) % (Math.PI * 2),
       size: 1,
     }));
-    // реальні записи — біля Одеси, трохи більші
     const odesa = CITIES[0]!;
     const reals = real.map((r, i) => ({
       id: `real-${r.pid}`,
@@ -113,6 +147,12 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
     return { x: cam.x + (sx - w / 2) / s, y: cam.y + (sy - h / 2) / s };
   }, []);
 
+  const flashHint = useCallback(() => {
+    setScrollHint(true);
+    if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+    hintTimerRef.current = setTimeout(() => setScrollHint(false), 1700);
+  }, []);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const wrap = wrapRef.current;
@@ -121,11 +161,10 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
     if (!ctx) return;
 
     reduceRef.current = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5); // перф: 1.5 достатньо для вогнів
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     const spriteWarm = makeGlowSprite(true);
     const spriteBase = makeGlowSprite(false);
 
-    // пре-рендерена крапкова текстура суші
     const patCanvas = document.createElement("canvas");
     patCanvas.width = 22;
     patCanvas.height = 22;
@@ -135,6 +174,7 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
     pg.fillRect(15, 11, 1, 1);
     pg.fillRect(9, 18, 1, 1);
     const landPattern = ctx.createPattern(patCanvas, "repeat")!;
+
     let w = 0;
     let h = 0;
     let placedCamera = false;
@@ -147,7 +187,6 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
       canvas.height = h * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       if (!placedCamera) {
-        // мапа праворуч від титрів на широких екранах
         const shift = w > h ? 0.1 * (w / h - 1) : 0;
         camRef.current.x = FIELD_CX - shift;
         targetRef.current.x = FIELD_CX - shift;
@@ -156,6 +195,42 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
     };
     resize();
     window.addEventListener("resize", resize);
+
+    /**
+     * Берегова лінія — м’яка крива: вершини як контрольні точки, лінія йде
+     * через середини ребер. Прибирає рубленість спрощеного контуру.
+     */
+    const strokeRing = (ring: Ring, cam: Cam) => {
+      const n = ring.length;
+      if (n < 3) return;
+      const s = Math.min(w, h) * cam.z;
+      const px = (i: number) => w / 2 + (ring[i]![0] - cam.x) * s;
+      const py = (i: number) => h / 2 + (ring[i]![1] - cam.y) * s;
+      ctx.beginPath();
+      ctx.moveTo((px(0) + px(1)) / 2, (py(0) + py(1)) / 2);
+      for (let i = 1; i < n; i++) {
+        const j = (i + 1) % n;
+        ctx.quadraticCurveTo(px(i), py(i), (px(i) + px(j)) / 2, (py(i) + py(j)) / 2);
+      }
+      ctx.closePath();
+    };
+
+    /**
+     * Адміністративні межі — прямі відрізки. Кордони районів і громад
+     * реально ламані; згладжування перетворює їх на «хмари», тож тут воно
+     * шкідливе.
+     */
+    const strokePoly = (ring: Ring, cam: Cam) => {
+      const n = ring.length;
+      if (n < 3) return;
+      const s = Math.min(w, h) * cam.z;
+      ctx.beginPath();
+      ctx.moveTo(w / 2 + (ring[0]![0] - cam.x) * s, h / 2 + (ring[0]![1] - cam.y) * s);
+      for (let i = 1; i < n; i++) {
+        ctx.lineTo(w / 2 + (ring[i]![0] - cam.x) * s, h / 2 + (ring[i]![1] - cam.y) * s);
+      }
+      ctx.closePath();
+    };
 
     let t0 = performance.now();
     const frame = (now: number) => {
@@ -174,7 +249,18 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
         setImmersed(deep);
       }
 
-      // ── ніч і море: глибокий вертикальний градієнт ──
+      // ліниве довантаження громад
+      if (cam.z > HROMADA_Z - 0.6 && !hromadasRef.current && !hromadaLoadRef.current) {
+        hromadaLoadRef.current = true;
+        fetch("/geo/hromadas.json")
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d: Ring[] | null) => {
+            if (d) hromadasRef.current = d.map(bounds);
+          })
+          .catch(() => {});
+      }
+
+      // ── ніч і море ──
       const seaGrad = ctx.createLinearGradient(0, 0, 0, h);
       seaGrad.addColorStop(0, "#07080C");
       seaGrad.addColorStop(0.55, "#080B12");
@@ -182,30 +268,15 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
       ctx.fillStyle = seaGrad;
       ctx.fillRect(0, 0, w, h);
 
-      // ── суходіл: багатошарова картографічна подача ──
-      const tracePath = () => {
-        ctx.beginPath();
-        for (let i = 0; i < OUTLINE.length; i++) {
-          const p = toScreen({ x: OUTLINE[i]![0], y: OUTLINE[i]![1] }, cam, w, h);
-          if (i === 0) ctx.moveTo(p.x, p.y);
-          else ctx.lineTo(p.x, p.y);
-        }
-        ctx.closePath();
-      };
-
-      // 1) зовнішнє мʼяке світіння берегової лінії (глибина)
-      tracePath();
+      // ── суходіл ──
+      strokeRing(OUTLINE, cam);
       ctx.strokeStyle = "rgba(150,180,220,0.05)";
-      ctx.lineWidth = 10;
-      ctx.stroke();
-      ctx.strokeStyle = "rgba(150,180,220,0.07)";
-      ctx.lineWidth = 4;
+      ctx.lineWidth = 8;
       ctx.stroke();
 
-      // 2) заливка суші: теплий градієнт з півночі на південь
-      tracePath();
-      const landTop = toScreen({ x: 0.33, y: 0 }, cam, w, h).y;
-      const landBot = toScreen({ x: 0.33, y: 1 }, cam, w, h).y;
+      strokeRing(OUTLINE, cam);
+      const landTop = toScreen({ x: FIELD_CX, y: 0 }, cam, w, h).y;
+      const landBot = toScreen({ x: FIELD_CX, y: 1 }, cam, w, h).y;
       const landGrad = ctx.createLinearGradient(0, landTop, 0, landBot);
       landGrad.addColorStop(0, "rgba(251,243,233,0.045)");
       landGrad.addColorStop(0.6, "rgba(251,243,233,0.028)");
@@ -213,26 +284,51 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
       ctx.fillStyle = landGrad;
       ctx.fill();
 
-      // 3) текстура суші: рідкий пунктирний растр (пре-рендерений патерн)
+      // текстура + внутрішні межі — під кліпом суші
       ctx.save();
       ctx.clip();
+
       ctx.globalAlpha = 0.5;
       ctx.fillStyle = landPattern;
-      const off = (cam.x * 40) % 22;
+      const offX = (cam.x * 40) % 22;
       const offY = (cam.y * 40) % 22;
-      ctx.translate(-off, -offY);
+      ctx.translate(-offX, -offY);
       ctx.fillRect(-22, -22, w + 44, h + 44);
+      ctx.translate(offX, offY);
       ctx.globalAlpha = 1;
+
+      // громади — найтонший шар
+      const hroA = clamp01((cam.z - HROMADA_Z) / 1.8) * 0.3;
+      if (hroA > 0.01 && hromadasRef.current) {
+        const vx0 = cam.x - w / 2 / (Math.min(w, h) * cam.z);
+        const vx1 = cam.x + w / 2 / (Math.min(w, h) * cam.z);
+        const vy0 = cam.y - h / 2 / (Math.min(w, h) * cam.z);
+        const vy1 = cam.y + h / 2 / (Math.min(w, h) * cam.z);
+        ctx.strokeStyle = `rgba(251,243,233,${hroA})`;
+        ctx.lineWidth = 0.6;
+        for (const b of hromadasRef.current) {
+          if (b.x1 < vx0 || b.x0 > vx1 || b.y1 < vy0 || b.y0 > vy1) continue;
+          strokePoly(b.ring, cam);
+          ctx.stroke();
+        }
+      }
+
+      // райони — виразніші за громади
+      const raiA = clamp01((cam.z - RAION_Z) / 1.2) * 0.42;
+      if (raiA > 0.01) {
+        ctx.strokeStyle = `rgba(251,243,233,${raiA})`;
+        ctx.lineWidth = 0.9;
+        for (const b of raions) {
+          strokePoly(b.ring, cam);
+          ctx.stroke();
+        }
+      }
       ctx.restore();
 
-      // 4) подвійний контур: тонкий основний + віддалена внутрішня лінія
-      tracePath();
-      ctx.strokeStyle = "rgba(251,243,233,0.22)";
-      ctx.lineWidth = 1.4;
-      ctx.stroke();
-      tracePath();
-      ctx.strokeStyle = "rgba(251,243,233,0.05)";
-      ctx.lineWidth = 5;
+      // контур області — головна лінія
+      strokeRing(OUTLINE, cam);
+      ctx.strokeStyle = `rgba(251,243,233,${cam.z > 4 ? 0.3 : 0.42})`;
+      ctx.lineWidth = 1.2;
       ctx.stroke();
 
       const time = now / 1000;
@@ -240,9 +336,8 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
       const hover = hoverRef.current;
       const showNames = cam.z >= NAME_Z;
 
-      // велика тиха назва області поверх суші (лише на віддалі)
       if (cam.z < 1.6) {
-        const t = toScreen({ x: 0.31, y: 0.3 }, cam, w, h);
+        const t = toScreen({ x: FIELD_CX - 0.02, y: 0.3 }, cam, w, h);
         ctx.font = "600 30px var(--font-odesa), sans-serif";
         ctx.textAlign = "center";
         ctx.fillStyle = `rgba(251,243,233,${0.1 * (1.6 - cam.z) * 2.2})`;
@@ -263,7 +358,6 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
         ctx.arc(p.x, p.y, c.tier === 1 ? 2.6 : 1.7, 0, Math.PI * 2);
         ctx.fill();
         ctx.font = `${c.tier === 1 ? 600 : 500} ${c.tier === 1 ? 13 : 11.5}px var(--font-odesa), sans-serif`;
-        // підкладка для читабельності поверх вогнів
         ctx.strokeStyle = "rgba(7,8,12,0.75)";
         ctx.lineWidth = 3;
         ctx.strokeText(c.name, p.x + 8, p.y + 4);
@@ -271,7 +365,6 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
         ctx.fillText(c.name, p.x + 8, p.y + 4);
       }
 
-      // море: підпис + легкі лінії хвиль
       if (cam.z < 3.4) {
         const sea = toScreen({ x: 0.53, y: 0.84 }, cam, w, h);
         ctx.font = "500 13px var(--font-odesa), sans-serif";
@@ -287,7 +380,11 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
         }
       }
 
-      // ── вогні (спрайтами) ──
+      // ── вогні ──
+      // Підписи збираємо окремо й розкладаємо другим проходом, щоб імена
+      // не наповзали одне на одне при глибокому наближенні.
+      const labels: { text: string; x: number; y: number; bold: boolean; alpha: number; prio: number }[] = [];
+
       for (const l of lights) {
         const p = toScreen(l, cam, w, h);
         if (p.x < -30 || p.x > w + 30 || p.y < -30 || p.y > h + 30) continue;
@@ -297,10 +394,21 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
         const isHover = hover?.id === l.id;
         const isSel = selected?.id === l.id;
 
+        // Дихання вічного вогню: три несинхронні гармоніки — рух живий,
+        // без механічної пульсації однієї синусоїди.
+        const ph = l.phase;
         const flicker = reduceRef.current
           ? 1
-          : 0.82 + 0.18 * Math.sin(time * (1.4 + (l.phase % 1)) + l.phase);
-        const base = (1.1 + cam.z * 0.42) * l.size * (isHover || isSel ? 1.9 : 1);
+          : 0.87 +
+            0.075 * Math.sin(time * 0.62 + ph) +
+            0.045 * Math.sin(time * 1.09 + ph * 2.3) +
+            0.025 * Math.sin(time * 1.93 + ph * 0.7);
+
+        const breath = reduceRef.current ? 1 : 1 + 0.05 * Math.sin(time * 0.48 + ph * 1.7);
+        // Зростання розміру обмежене: зблизька вогники лишаються свічками,
+        // а не перетворюються на прожектори.
+        const zScale = 1.1 + Math.min(cam.z, 5.5) * 0.42;
+        const base = zScale * l.size * breath * (isHover || isSel ? 1.9 : 1);
         const alpha = dimmed ? 0.08 : (l.demo ? 0.72 : 0.95) * flicker;
         const sprite = matches || isHover || isSel ? spriteWarm : spriteBase;
         const R = base * 5;
@@ -318,10 +426,41 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
           const nameAlpha =
             isHover || isSel || matches ? 0.95 : Math.min(0.75, (cam.z - NAME_Z) * 0.28 + 0.2);
           if (nameAlpha > 0.05) {
-            ctx.font = `${isHover || isSel ? 600 : 400} ${isHover || isSel ? 13 : 12}px var(--font-odesa), sans-serif`;
-            ctx.fillStyle = `rgba(251,243,233,${nameAlpha})`;
-            ctx.fillText(l.name, p.x + base * 4 + 6, p.y + 4);
+            labels.push({
+              text: l.name,
+              x: p.x + base * 4 + 6,
+              y: p.y + 4,
+              bold: isHover || isSel,
+              alpha: nameAlpha,
+              // пріоритет: наведене/обране → збіги пошуку → реальні → решта
+              prio: isHover || isSel ? 0 : matches ? 1 : l.demo ? 3 : 2,
+            });
           }
+        }
+      }
+
+      // розкладка підписів без перекриття (greedy за пріоритетом)
+      if (labels.length) {
+        labels.sort((a, b) => a.prio - b.prio || a.y - b.y);
+        const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
+        for (const lb of labels) {
+          ctx.font = `${lb.bold ? 600 : 500} ${lb.bold ? 13 : 12}px var(--font-odesa), sans-serif`;
+          const tw = ctx.measureText(lb.text).width;
+          const box = { x0: lb.x - 2, y0: lb.y - 11, x1: lb.x + tw + 2, y1: lb.y + 4 };
+          let hit = false;
+          for (const b of placed) {
+            if (box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0) {
+              hit = true;
+              break;
+            }
+          }
+          if (hit) continue;
+          placed.push(box);
+          ctx.strokeStyle = "rgba(8,9,13,0.85)";
+          ctx.lineWidth = 3;
+          ctx.strokeText(lb.text, lb.x, lb.y);
+          ctx.fillStyle = `rgba(251,243,233,${lb.alpha})`;
+          ctx.fillText(lb.text, lb.x, lb.y);
         }
       }
 
@@ -329,7 +468,6 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
     };
     rafRef.current = requestAnimationFrame(frame);
 
-    // перф: зупиняємо цикл, коли поле поза вʼюпортом
     let running = true;
     const io = new IntersectionObserver(
       (entries) => {
@@ -362,18 +500,32 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
       return best;
     };
 
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
+    const zoomAt = (sx: number, sy: number, factor: number) => {
       const tgt = targetRef.current;
       const before = toWorld(sx, sy, tgt, w, h);
-      tgt.z = Math.min(MAX_Z, Math.max(MIN_Z, tgt.z * Math.exp(-e.deltaY * 0.0016)));
+      tgt.z = Math.min(MAX_Z, Math.max(MIN_Z, tgt.z * factor));
       const after = toWorld(sx, sy, tgt, w, h);
       tgt.x += before.x - after.x;
       tgt.y += before.y - after.y;
     };
+
+    // Прокрутка сторінки лишається за сторінкою; мапа наближається лише
+    // з модифікатором (як у вбудованих картах) або кнопками.
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) {
+        if (Math.abs(e.deltaY) > 2) flashHint();
+        return; // без preventDefault → гортається сторінка
+      }
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      zoomAt(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-e.deltaY * 0.0016));
+    };
+
+    const onDblClick = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      zoomAt(e.clientX - rect.left, e.clientY - rect.top, 1.8);
+    };
+
     const onDown = (e: PointerEvent) => {
       canvas.setPointerCapture(e.pointerId);
       dragRef.current = { px: e.clientX, py: e.clientY, moved: false };
@@ -413,6 +565,7 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
     };
 
     canvas.addEventListener("wheel", onWheel, { passive: false });
+    canvas.addEventListener("dblclick", onDblClick);
     canvas.addEventListener("pointerdown", onDown);
     canvas.addEventListener("pointermove", onMove);
     canvas.addEventListener("pointerup", onUp);
@@ -422,18 +575,19 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
       io.disconnect();
       window.removeEventListener("resize", resize);
       canvas.removeEventListener("wheel", onWheel);
+      canvas.removeEventListener("dblclick", onDblClick);
       canvas.removeEventListener("pointerdown", onDown);
       canvas.removeEventListener("pointermove", onMove);
       canvas.removeEventListener("pointerup", onUp);
     };
-  }, [lights, selected, toScreen, toWorld]);
+  }, [lights, selected, raions, toScreen, toWorld, flashHint]);
 
   const zoomBy = (f: number) => {
     const t = targetRef.current;
     t.z = Math.min(MAX_Z, Math.max(MIN_Z, t.z * f));
   };
   const reset = () => {
-    targetRef.current = { x: camRef.current.x, y: 0.5, z: 0.9 };
+    targetRef.current = { x: camRef.current.x, y: FIELD_CY, z: 0.9 };
     setSelected(null);
     setQuery("");
   };
@@ -489,7 +643,20 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
         <button onClick={reset} aria-label="Показати всю область" className="h-10 w-10 bg-[#0B0E14] text-xs text-cream transition-colors hover:bg-[#141926]">⌂</button>
       </div>
 
-      {/* Легенда мапи */}
+      {/* Підказка про наближення — з’являється при спробі гортати над мапою */}
+      <div
+        className={`pointer-events-none absolute inset-0 z-10 flex items-center justify-center transition-opacity duration-300 ${
+          scrollHint ? "opacity-100" : "opacity-0"
+        }`}
+      >
+        <p className="rounded-[3px] border border-hair-strong bg-[#0B0F16]/95 px-5 py-3 text-sm text-cream">
+          Утримуйте <kbd className="mx-1 rounded border border-hair px-1.5 py-0.5 text-xs">⌘</kbd>
+          або <kbd className="mx-1 rounded border border-hair px-1.5 py-0.5 text-xs">Ctrl</kbd>,
+          щоб наблизити мапу
+        </p>
+      </div>
+
+      {/* Легенда */}
       <div
         className={`pointer-events-none absolute bottom-24 left-6 transition-opacity duration-700 md:left-10 ${
           immersed ? "opacity-0" : "opacity-100"
@@ -502,7 +669,9 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
           </p>
           <p className="mt-1 text-xs text-ink-lo">Мапа Одеської області · вогні над рідними містами</p>
         </div>
-        <p className="mt-3 text-xs text-ink-lo">Тягніть, щоб рухатися мапою · колесо — наближення</p>
+        <p className="mt-3 text-xs text-ink-lo">
+          Тягніть, щоб рухатися · ⌘/Ctrl + колесо або подвійний клік — наближення
+        </p>
       </div>
       {immersed && (
         <p className="pointer-events-none absolute bottom-24 left-6 text-xs text-ink-lo md:left-10">
