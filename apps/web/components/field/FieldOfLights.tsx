@@ -6,15 +6,18 @@ import { generateDemoLights, type DemoLight } from "../../lib/demo-names";
 import { OUTLINE, RAIONS, CITIES, FIELD_CX, FIELD_CY, type Ring } from "../../lib/odesa-geo";
 
 /**
- * Поле вогнів над Одеською областю. Справжня географія (geoBoundaries):
- * контур області, райони, громади — і вогник за кожним ім’ям.
+ * Поле вогнів над Одеською областю. Справжня географія: контур області
+ * (geoBoundaries), райони й громади — чинний поділ після реформи 2020
+ * (OpenStreetMap, українські назви). Вогник за кожним ім’ям.
  *
  * Рішення щодо продуктивності:
  *  · сяйво вогнів — один пре-рендерений спрайт (drawImage), не градієнти;
  *  · берегова лінія — квадратичні криві через середини ребер (м’яко);
  *    адмінмежі — прямі відрізки, бо кордони реально ламані;
- *  · громади (429 полігонів) вантажаться з /geo/hromadas.json лише при
- *    наближенні й відсікаються за bbox;
+ *  · громади вантажаться з /geo/hromadas.json лише при наближенні
+ *    й відсікаються за bbox;
+ *  · усі підписи — топоніми й імена — проходять одну чергу з пріоритетом,
+ *    тому не накладаються;
  *  · цикл зупиняється, коли поле поза в’юпортом.
  *
  * Прокрутка: звичайне колесо гортає сторінку (щоб хіро не «крав» скрол),
@@ -49,10 +52,23 @@ interface Cam {
 
 interface Bounded {
   ring: Ring;
+  name?: string;
+  cx: number;
+  cy: number;
+  r: number;
   x0: number;
   y0: number;
   x1: number;
   y1: number;
+}
+
+/** Формат /geo/hromadas.json */
+interface HromadaRaw {
+  name: string;
+  ring: [number, number][];
+  cx: number;
+  cy: number;
+  r: number;
 }
 
 const MIN_Z = 0.8;
@@ -63,7 +79,7 @@ const HROMADA_Z = 3.0; // …і громади
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
-function bounds(ring: Ring): Bounded {
+function bounds(ring: Ring, name?: string, cx?: number, cy?: number, r?: number): Bounded {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const [x, y] of ring) {
     if (x < x0) x0 = x;
@@ -71,7 +87,17 @@ function bounds(ring: Ring): Bounded {
     if (x > x1) x1 = x;
     if (y > y1) y1 = y;
   }
-  return { ring, x0, y0, x1, y1 };
+  return {
+    ring,
+    name,
+    cx: cx ?? (x0 + x1) / 2,
+    cy: cy ?? (y0 + y1) / 2,
+    r: r ?? Math.max(x1 - x0, y1 - y0) / 2,
+    x0,
+    y0,
+    x1,
+    y1,
+  };
 }
 
 /** Пре-рендер спрайта сяйва: тепле ядро + м’який ореол. */
@@ -112,7 +138,10 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
   const queryRef = useRef("");
   queryRef.current = query.trim().toLowerCase();
 
-  const raions = useMemo(() => RAIONS.map(bounds), []);
+  const raions = useMemo(
+    () => RAIONS.map((r) => bounds(r.ring, r.name, r.cx, r.cy, r.r)),
+    []
+  );
 
   const lights = useMemo<Light[]>(() => {
     const demo = generateDemoLights(420).map((d: DemoLight, i: number) => ({
@@ -254,8 +283,8 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
         hromadaLoadRef.current = true;
         fetch("/geo/hromadas.json")
           .then((r) => (r.ok ? r.json() : null))
-          .then((d: Ring[] | null) => {
-            if (d) hromadasRef.current = d.map(bounds);
+          .then((d: HromadaRaw[] | null) => {
+            if (d) hromadasRef.current = d.map((x) => bounds(x.ring, x.name, x.cx, x.cy, x.r));
           })
           .catch(() => {});
       }
@@ -345,24 +374,84 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
         ctx.textAlign = "left";
       }
 
-      // ── міста ──
+      // ── єдина черга підписів ──
+      // Топоніми й імена розкладаються одним алгоритмом за пріоритетом,
+      // тож нічого не наповзає одне на одне. Топоніми — приглушений
+      // розріджений регістр, імена — світлі: два різні шари читання.
+      type Label = {
+        text: string;
+        x: number;
+        y: number;
+        font: string;
+        color: string;
+        prio: number;
+        center?: boolean;
+        track?: number;
+      };
+      const labels: Label[] = [];
+
+      // міста
       ctx.textAlign = "left";
       for (const c of CITIES) {
         const visible = c.tier === 1 || (c.tier === 2 && cam.z > 1.35) || cam.z > 2.4;
         if (!visible) continue;
         const p = toScreen(c, cam, w, h);
         if (p.x < -80 || p.x > w + 80 || p.y < -20 || p.y > h + 20) continue;
-        const a = c.tier === 1 ? 0.78 : 0.5;
+        const a = c.tier === 1 ? 0.82 : 0.55;
         ctx.fillStyle = `rgba(251,243,233,${a})`;
         ctx.beginPath();
         ctx.arc(p.x, p.y, c.tier === 1 ? 2.6 : 1.7, 0, Math.PI * 2);
         ctx.fill();
-        ctx.font = `${c.tier === 1 ? 600 : 500} ${c.tier === 1 ? 13 : 11.5}px var(--font-odesa), sans-serif`;
-        ctx.strokeStyle = "rgba(7,8,12,0.75)";
-        ctx.lineWidth = 3;
-        ctx.strokeText(c.name, p.x + 8, p.y + 4);
-        ctx.fillStyle = `rgba(251,243,233,${a})`;
-        ctx.fillText(c.name, p.x + 8, p.y + 4);
+        labels.push({
+          text: c.name,
+          x: p.x + 8,
+          y: p.y + 4,
+          font: `${c.tier === 1 ? 600 : 500} ${c.tier === 1 ? 13 : 11.5}px var(--font-odesa), sans-serif`,
+          color: `rgba(251,243,233,${a})`,
+          prio: c.tier === 1 ? 1 : 5,
+        });
+      }
+
+      // назви районів — доки не з’явилися громади
+      const raionTextA = clamp01((cam.z - 1.15) / 0.5) * clamp01((4.6 - cam.z) / 1.1) * 0.55;
+      if (raionTextA > 0.02) {
+        const s = Math.min(w, h) * cam.z;
+        for (const r of RAIONS) {
+          if (r.r * s < 90) continue; // замалий на екрані — підпис нечитабельний
+          const p = toScreen({ x: r.cx, y: r.cy }, cam, w, h);
+          if (p.x < -100 || p.x > w + 100 || p.y < -30 || p.y > h + 30) continue;
+          labels.push({
+            text: r.name.toUpperCase(),
+            x: p.x,
+            y: p.y,
+            font: `600 12px var(--font-odesa), sans-serif`,
+            color: `rgba(251,243,233,${raionTextA})`,
+            prio: 2,
+            center: true,
+            track: 1.6,
+          });
+        }
+      }
+
+      // назви громад — на глибокому масштабі
+      const hromTextA = clamp01((cam.z - HROMADA_Z - 0.3) / 1.2) * 0.42;
+      if (hromTextA > 0.02 && hromadasRef.current) {
+        const s = Math.min(w, h) * cam.z;
+        for (const b of hromadasRef.current) {
+          if (!b.name || b.r * s < 60) continue;
+          const p = toScreen({ x: b.cx, y: b.cy }, cam, w, h);
+          if (p.x < -100 || p.x > w + 100 || p.y < -30 || p.y > h + 30) continue;
+          labels.push({
+            text: b.name.toUpperCase(),
+            x: p.x,
+            y: p.y,
+            font: `600 9.5px var(--font-odesa), sans-serif`,
+            color: `rgba(251,243,233,${hromTextA})`,
+            prio: 4,
+            center: true,
+            track: 1.2,
+          });
+        }
       }
 
       if (cam.z < 3.4) {
@@ -381,10 +470,6 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
       }
 
       // ── вогні ──
-      // Підписи збираємо окремо й розкладаємо другим проходом, щоб імена
-      // не наповзали одне на одне при глибокому наближенні.
-      const labels: { text: string; x: number; y: number; bold: boolean; alpha: number; prio: number }[] = [];
-
       for (const l of lights) {
         const p = toScreen(l, cam, w, h);
         if (p.x < -30 || p.x > w + 30 || p.y < -30 || p.y > h + 30) continue;
@@ -394,17 +479,21 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
         const isHover = hover?.id === l.id;
         const isSel = selected?.id === l.id;
 
-        // Дихання вічного вогню: три несинхронні гармоніки — рух живий,
-        // без механічної пульсації однієї синусоїди.
+        // Дихання вічного вогню: три несинхронні гармоніки плюс власний темп
+        // у кожного вогника — тому поле мерехтить нерівно, як живе полум’я,
+        // а не пульсує в такт.
         const ph = l.phase;
+        const spd = 0.72 + (ph % 1) * 0.62; // власна швидкість вогника
         const flicker = reduceRef.current
           ? 1
-          : 0.87 +
-            0.075 * Math.sin(time * 0.62 + ph) +
-            0.045 * Math.sin(time * 1.09 + ph * 2.3) +
-            0.025 * Math.sin(time * 1.93 + ph * 0.7);
+          : 0.76 +
+            0.15 * Math.sin(time * 0.55 * spd + ph) +
+            0.09 * Math.sin(time * 1.07 * spd + ph * 2.3) +
+            0.05 * Math.sin(time * 2.13 * spd + ph * 0.7);
 
-        const breath = reduceRef.current ? 1 : 1 + 0.05 * Math.sin(time * 0.48 + ph * 1.7);
+        const breath = reduceRef.current
+          ? 1
+          : 1 + 0.15 * Math.sin(time * 0.5 * spd + ph * 1.7);
         // Зростання розміру обмежене: зблизька вогники лишаються свічками,
         // а не перетворюються на прожектори.
         const zScale = 1.1 + Math.min(cam.z, 5.5) * 0.42;
@@ -415,7 +504,7 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
 
         ctx.globalAlpha = alpha;
         ctx.drawImage(sprite, p.x - R, p.y - R, R * 2, R * 2);
-        ctx.globalAlpha = Math.min(1, alpha + 0.15);
+        ctx.globalAlpha = Math.min(1, alpha * 1.05);
         ctx.fillStyle = "#FFF6E6";
         ctx.beginPath();
         ctx.arc(p.x, p.y, Math.max(1, base * 0.8), 0, Math.PI * 2);
@@ -430,23 +519,28 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
               text: l.name,
               x: p.x + base * 4 + 6,
               y: p.y + 4,
-              bold: isHover || isSel,
-              alpha: nameAlpha,
-              // пріоритет: наведене/обране → збіги пошуку → реальні → решта
-              prio: isHover || isSel ? 0 : matches ? 1 : l.demo ? 3 : 2,
+              font: `${isHover || isSel ? 600 : 500} ${isHover || isSel ? 13 : 12}px var(--font-odesa), sans-serif`,
+              color: `rgba(251,243,233,${nameAlpha})`,
+              // наведене/обране → збіги пошуку → реальні записи → демо
+              prio: isHover || isSel ? 0 : matches ? 3 : l.demo ? 7 : 6,
             });
           }
         }
       }
 
-      // розкладка підписів без перекриття (greedy за пріоритетом)
+      // Розкладка: жадібно за пріоритетом, з перевіркою на перекриття.
+      // Що не вмістилося — просто не малюємо, тож карта лишається чистою.
       if (labels.length) {
         labels.sort((a, b) => a.prio - b.prio || a.y - b.y);
         const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
         for (const lb of labels) {
-          ctx.font = `${lb.bold ? 600 : 500} ${lb.bold ? 13 : 12}px var(--font-odesa), sans-serif`;
-          const tw = ctx.measureText(lb.text).width;
-          const box = { x0: lb.x - 2, y0: lb.y - 11, x1: lb.x + tw + 2, y1: lb.y + 4 };
+          ctx.font = lb.font;
+          const spaced = lb.track
+            ? lb.text.split("").join(String.fromCharCode(8202))
+            : lb.text;
+          const tw = ctx.measureText(spaced).width;
+          const x = lb.center ? lb.x - tw / 2 : lb.x;
+          const box = { x0: x - 3, y0: lb.y - 11, x1: x + tw + 3, y1: lb.y + 4 };
           let hit = false;
           for (const b of placed) {
             if (box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0) {
@@ -456,11 +550,11 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
           }
           if (hit) continue;
           placed.push(box);
-          ctx.strokeStyle = "rgba(8,9,13,0.85)";
+          ctx.strokeStyle = "rgba(8,9,13,0.8)";
           ctx.lineWidth = 3;
-          ctx.strokeText(lb.text, lb.x, lb.y);
-          ctx.fillStyle = `rgba(251,243,233,${lb.alpha})`;
-          ctx.fillText(lb.text, lb.x, lb.y);
+          ctx.strokeText(spaced, x, lb.y);
+          ctx.fillStyle = lb.color;
+          ctx.fillText(spaced, x, lb.y);
         }
       }
 
