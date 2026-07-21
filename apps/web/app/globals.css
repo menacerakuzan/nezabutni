@@ -1,0 +1,241 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Odesa Region Type";
+  src: url("/fonts/OdesaRegionType-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Odesa Region Type";
+  src: url("/fonts/OdesaRegionType-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Odesa Region Type";
+  src: url("/fonts/OdesaRegionType-Semi.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Odesa Region Type";
+  src: url("/fonts/OdesaRegionType-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Odesa Region Type";
+  src: url("/fonts/OdesaRegionType-Heavy.woff2") format("woff2");
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --font-odesa: "Odesa Region Type";
+  color-scheme: dark;
+
+  /* Друкований монохром на теплому чорному */
+  --ink-hi: #fbf3e9;
+  --ink: rgba(251, 243, 233, 0.8);
+  --ink-lo: rgba(251, 243, 233, 0.56);
+  --ink-faint: rgba(251, 243, 233, 0.26);
+  --hair: rgba(251, 243, 233, 0.11);
+  --hair-strong: rgba(251, 243, 233, 0.2);
+}
+
+html {
+  scroll-behavior: smooth;
+  background: #09090c;
+}
+
+body {
+  background: #09090c;
+  color: var(--ink-hi);
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgba(223, 155, 59, 0.26);
+  color: #fbf3e9;
+}
+
+/* ── Базовий темний стиль полів форм ── */
+@layer base {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  input[type="date"],
+  input[type="number"],
+  input[type="tel"],
+  input[type="url"],
+  textarea,
+  select {
+    background-color: transparent;
+    color: var(--ink-hi);
+    border-width: 0 0 1px 0;
+    border-color: var(--hair-strong);
+    border-radius: 0;
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+  textarea {
+    border-width: 1px;
+    border-color: var(--hair);
+    background-color: rgba(251, 243, 233, 0.03);
+    padding: 0.75rem 1rem;
+  }
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: #df9b3b;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--ink-faint);
+  }
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: none;
+    border-color: rgba(223, 155, 59, 0.55);
+  }
+  option {
+    background-color: #0d2138;
+    color: var(--ink-hi);
+  }
+}
+
+@layer components {
+  /* Тонка друкована лінія-роздільник */
+  .rule {
+    height: 1px;
+    background: var(--hair);
+  }
+  /* Атмосферна завіса: темно-синій + бордо + ледь золота свічка */
+  .candle-veil {
+    background:
+      radial-gradient(55% 55% at 50% 42%, rgba(223, 155, 59, 0.1), transparent 66%),
+      radial-gradient(70% 80% at 78% 10%, rgba(0, 47, 94, 0.4), transparent 62%),
+      radial-gradient(80% 90% at 22% 120%, rgba(159, 31, 71, 0.26), transparent 60%);
+  }
+  /* Затемнення знизу для читабельності поверх медіа/відео */
+  .scrim-bottom {
+    background: linear-gradient(180deg, transparent 20%, rgba(9, 9, 12, 0.55) 55%, #09090c 100%);
+  }
+  /* Бічне затемнення поверх відео */
+  .scrim-sides {
+    background: linear-gradient(90deg, rgba(9, 9, 12, 0.75), transparent 32%, transparent 68%, rgba(9, 9, 12, 0.6));
+  }
+}
+
+@layer utilities {
+  .text-ink {
+    color: var(--ink);
+  }
+  .text-ink-lo {
+    color: var(--ink-lo);
+  }
+  .text-ink-faint {
+    color: var(--ink-faint);
+  }
+  .border-hair {
+    border-color: var(--hair);
+  }
+  .border-hair-strong {
+    border-color: var(--hair-strong);
+  }
+  /* Музейний мікро-лейбл (caption) */
+  .caption {
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-lo);
+  }
+
+}
+
+/* ── Ken Burns: дуже повільний наїзд камери ── */
+@keyframes kenburns {
+  0% {
+    transform: scale(1) translateY(0);
+  }
+  100% {
+    transform: scale(1.09) translateY(-1.5%);
+  }
+}
+.kenburns {
+  animation: kenburns 36s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+
+/* ── Меню доступності: режими через data-атрибути на <html> ── */
+html[data-a11y-links] a {
+  text-decoration: underline !important;
+  text-underline-offset: 3px;
+  color: #eab868 !important;
+}
+html[data-a11y-textsize="1"] {
+  font-size: 112.5%;
+}
+html[data-a11y-textsize="2"] {
+  font-size: 127%;
+}
+html[data-a11y-lineheight] body :is(p, li, a, span, h1, h2, h3, h4, blockquote, td, label) {
+  line-height: 1.9 !important;
+}
+html[data-a11y-letter] body :is(p, li, a, span, h1, h2, h3, h4, blockquote, td, label, button) {
+  letter-spacing: 0.09em !important;
+}
+html[data-a11y-left] body :is(p, h1, h2, h3, h4, blockquote, figcaption, li) {
+  text-align: left !important;
+}
+html[data-a11y-noimg] body img,
+html[data-a11y-noimg] body figure canvas {
+  visibility: hidden !important;
+}
+html[data-a11y-novideo] body video {
+  visibility: hidden !important;
+}
+html[data-a11y-cursor] body,
+html[data-a11y-cursor] body * {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24'%3E%3Cpath d='M5 3l14 9-6.5 1L16 19l-3 1.5-3.5-6L5 18z' fill='%23FBF3E9' stroke='%23090909' stroke-width='1.4'/%3E%3C/svg%3E")
+      4 2,
+    auto !important;
+}
+
+/* ── Плавні переходи між сторінками ── */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.page-transition {
+  animation: page-enter 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

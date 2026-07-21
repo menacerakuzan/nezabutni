@@ -1,0 +1,536 @@
+// ============================================================
+// МЕМОРІАЛ — ER-модель ядра платформы
+// Формат: DBML (dbdiagram.io) — импортировать напрямую на dbdiagram.io/d
+// Версия: 1.0 · соответствует Master Plan v1.0, раздел 17 "База данных"
+// СУБД: PostgreSQL 16 + PostGIS 3.4 + pgvector
+// ============================================================
+
+Project memorial {
+  database_type: 'PostgreSQL'
+  Note: '''
+    Ядро цифрової платформи памʼяті захисників.
+    Центральна сутність — defender (Persona of Record).
+    Усі інші сутності — звʼязки навколо профілю людини.
+  '''
+}
+
+// ---------------- ДОВІДНИКИ / IDENTITY ----------------
+
+Table app_user {
+  id uuid [pk, default: `gen_random_uuid()`]
+  auth_subject varchar(255) [unique, not null, note: 'sub из BankID/OIDC']
+  email varchar(320) [unique]
+  phone varchar(20)
+  display_name varchar(255) [not null]
+  avatar_media_id uuid [ref: > media_asset.id]
+  locale varchar(5) [default: 'uk']
+  two_factor_enabled boolean [default: false]
+  status user_status [default: 'active']
+  created_at timestamptz [default: `now()`]
+  updated_at timestamptz [default: `now()`]
+
+  indexes {
+    email
+    auth_subject [unique]
+  }
+}
+
+Enum user_status {
+  active
+  suspended
+  deleted
+}
+
+Table role {
+  id smallint [pk]
+  code varchar(30) [unique, not null, note: 'viewer|editor|moderator|archivist|verifier_gov|partner_curator|admin|superadmin']
+  name_uk varchar(120) [not null]
+  description text
+}
+
+Table user_role {
+  user_id uuid [ref: > app_user.id]
+  role_id smallint [ref: > role.id]
+  scope_type varchar(30) [note: 'global|region|partner — область дії ролі']
+  scope_id uuid [note: 'id региона/партнёра, если роль не глобальна']
+  granted_by uuid [ref: > app_user.id]
+  granted_at timestamptz [default: `now()`]
+
+  indexes {
+    (user_id, role_id, scope_type, scope_id) [pk]
+  }
+}
+
+Table api_key {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [ref: > app_user.id, not null]
+  key_hash varchar(128) [not null, unique]
+  label varchar(120)
+  rate_limit_per_min int [default: 60]
+  scopes varchar(255) [note: 'CSV: read:defenders,read:archive,...']
+  last_used_at timestamptz
+  revoked_at timestamptz
+  created_at timestamptz [default: `now()`]
+}
+
+// ---------------- ГЕОГРАФІЯ / АДМІНІСТРАТИВНИЙ ПОДІЛ ----------------
+
+Table region {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(255) [not null]
+  koatuu_code varchar(20)
+  parent_id uuid [ref: > region.id, note: 'область → район → громада']
+  level smallint [not null, note: '1=область 2=район 3=громада']
+}
+
+Table place {
+  id uuid [pk, default: `gen_random_uuid()`]
+  type place_type [not null]
+  name varchar(500) [not null]
+  slug varchar(255) [unique]
+  description text
+  geom_point geometry [note: 'GEOGRAPHY(Point,4326)']
+  geom_area geometry [note: 'GEOGRAPHY(Polygon,4326), опційно для маршрутів/зон']
+  region_id uuid [ref: > region.id]
+  date_from date [note: 'дата події/встановлення']
+  date_to date
+  sensitivity_level smallint [default: 0, note: '0=публічно 1=огрублені координати 2=приховано']
+  cover_media_id uuid [ref: > media_asset.id]
+  status content_status [default: 'draft']
+  created_by uuid [ref: > app_user.id]
+  created_at timestamptz [default: `now()`]
+  updated_at timestamptz [default: `now()`]
+
+  indexes {
+    (geom_point) [type: gist]
+    type
+    region_id
+    slug [unique]
+  }
+}
+
+Enum place_type {
+  battle
+  memorial
+  burial
+  monument
+  museum_site
+  frontline_segment
+}
+
+Table memory_route {
+  id uuid [pk, default: `gen_random_uuid()`]
+  title varchar(500) [not null]
+  slug varchar(255) [unique]
+  description text
+  geom_line geometry [note: 'GEOGRAPHY(LineString,4326)']
+  curator_id uuid [ref: > app_user.id]
+  status content_status [default: 'draft']
+  created_at timestamptz [default: `now()`]
+}
+
+Table memory_route_place {
+  route_id uuid [ref: > memory_route.id]
+  place_id uuid [ref: > place.id]
+  seq_order smallint [not null]
+
+  indexes { (route_id, place_id) [pk] }
+}
+
+// ---------------- ВІЙСЬКОВІ ПІДРОЗДІЛИ ----------------
+
+Table unit {
+  id uuid [pk, default: `gen_random_uuid()`]
+  parent_id uuid [ref: > unit.id]
+  name varchar(500) [not null]
+  official_number varchar(50)
+  type varchar(100) [note: 'бригада/батальйон/полк...']
+  branch varchar(100) [note: 'рід військ']
+  insignia_media_id uuid [ref: > media_asset.id]
+  description text
+
+  indexes { parent_id }
+}
+
+// ---------------- ЗАХИСНИКИ (CORE) ----------------
+
+Table defender {
+  id uuid [pk, default: `gen_random_uuid()`]
+  pid varchar(30) [unique, not null, note: 'постійний ID: MEM-2026-000123']
+  full_name varchar(500) [not null]
+  full_name_normalized varchar(500) [not null, note: 'для пошуку/дедуплікації']
+  callsign varchar(120)
+  gender varchar(10)
+  birth_date date
+  birth_place_id uuid [ref: > place.id]
+  death_date date
+  death_place_id uuid [ref: > place.id]
+  burial_place_id uuid [ref: > place.id]
+  unit_id uuid [ref: > unit.id]
+  rank varchar(120)
+  bio text
+  bio_blocks jsonb [note: 'блочна структура життєпису (див. CMS)']
+  portrait_media_id uuid [ref: > media_asset.id]
+  region_id uuid [ref: > region.id]
+  verification_status verification_status [default: 'pending', not null]
+  verified_by uuid [ref: > app_user.id]
+  verified_at timestamptz
+  guardian_user_id uuid [ref: > app_user.id, note: '"хранитель профілю" з родини']
+  candle_count int [default: 0, note: 'лічильник вшанувань, денормалізовано']
+  status content_status [default: 'draft']
+  created_by uuid [ref: > app_user.id]
+  created_at timestamptz [default: `now()`]
+  updated_at timestamptz [default: `now()`]
+
+  indexes {
+    pid [unique]
+    full_name_normalized [type: gin, note: 'pg_trgm для fuzzy search']
+    unit_id
+    verification_status
+    region_id
+    (death_date)
+  }
+
+  Note: 'CHECK (death_date IS NULL OR birth_date IS NULL OR death_date >= birth_date)'
+}
+
+Enum verification_status {
+  draft
+  pending
+  verified
+  disputed
+  archived
+}
+
+Enum content_status {
+  draft
+  in_review
+  published
+  archived
+}
+
+Table defender_award {
+  id uuid [pk, default: `gen_random_uuid()`]
+  defender_id uuid [ref: > defender.id]
+  title varchar(300) [not null]
+  awarded_date date
+  decree_reference varchar(255)
+  source_id uuid [ref: > source.id]
+}
+
+Table defender_place_role {
+  id uuid [pk, default: `gen_random_uuid()`]
+  defender_id uuid [ref: > defender.id]
+  place_id uuid [ref: > place.id]
+  role varchar(50) [note: 'served_at|fought_at|died_at|buried_at|born_at']
+  date_from date
+  date_to date
+
+  indexes { (defender_id, place_id, role) }
+}
+
+Table defender_relation {
+  defender_id uuid [ref: > defender.id]
+  related_defender_id uuid [ref: > defender.id]
+  relation_type varchar(50) [note: 'побратим|родич|командир']
+
+  indexes { (defender_id, related_defender_id, relation_type) [pk] }
+}
+
+// ---------------- МЕДІА / АРХІВ ----------------
+
+Table media_asset {
+  id uuid [pk, default: `gen_random_uuid()`]
+  kind media_kind [not null]
+  title varchar(500)
+  description text
+  master_uri varchar(1000) [not null, note: 'S3/MinIO: WORM bucket']
+  storage_checksum varchar(128) [not null, note: 'sha256']
+  mime_type varchar(120)
+  file_size_bytes bigint
+  width int
+  height int
+  duration_seconds numeric(10,2)
+  exif jsonb
+  ocr_text text
+  ocr_lang varchar(10)
+  iiif_manifest_uri varchar(1000)
+  rights_statement varchar(255) [not null, note: 'CC-BY|CC0|in-copyright|orphan-work...']
+  provenance text
+  ai_generated_caption boolean [default: false]
+  uploaded_by uuid [ref: > app_user.id]
+  partner_id uuid [ref: > partner.id]
+  status content_status [default: 'draft']
+  created_at timestamptz [default: `now()`]
+
+  indexes {
+    kind
+    status
+    (ocr_text) [type: gin, note: 'to_tsvector FTS']
+  }
+}
+
+Enum media_kind {
+  photo
+  video
+  audio
+  document
+  document_3d
+  panorama
+}
+
+Table media_derivative {
+  id uuid [pk, default: `gen_random_uuid()`]
+  media_id uuid [ref: > media_asset.id, not null]
+  type varchar(50) [note: 'thumbnail|preview|iiif_tile|hls_master|webp']
+  uri varchar(1000) [not null]
+  width int
+  height int
+
+  indexes { media_id }
+}
+
+Table media_link {
+  id uuid [pk, default: `gen_random_uuid()`]
+  media_id uuid [ref: > media_asset.id, not null]
+  entity_type varchar(30) [not null, note: 'defender|place|exhibit|story|unit']
+  entity_id uuid [not null]
+  role varchar(50) [note: 'portrait|gallery|document|cover']
+  sort_order smallint [default: 0]
+
+  indexes { (entity_type, entity_id) }
+}
+
+Table source {
+  id uuid [pk, default: `gen_random_uuid()`]
+  media_id uuid [ref: > media_asset.id]
+  citation text [not null]
+  provenance text
+  reliability smallint [note: '1..5']
+  external_url varchar(1000)
+  created_at timestamptz [default: `now()`]
+}
+
+Table media_fixity_check {
+  id uuid [pk, default: `gen_random_uuid()`]
+  media_id uuid [ref: > media_asset.id, not null]
+  checksum_verified varchar(128) [not null]
+  matched boolean [not null]
+  checked_at timestamptz [default: `now()`]
+}
+
+// ---------------- ПАРТНЕРИ (МУЗЕЇ / АРХІВИ) ----------------
+
+Table partner {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(500) [not null]
+  type varchar(50) [note: 'museum|archive|library|government']
+  contact_email varchar(320)
+  logo_media_id uuid [ref: > media_asset.id]
+  status varchar(30) [default: 'active']
+}
+
+Table collection {
+  id uuid [pk, default: `gen_random_uuid()`]
+  partner_id uuid [ref: > partner.id]
+  title varchar(500) [not null]
+  slug varchar(255) [unique]
+  description text
+  status content_status [default: 'draft']
+  created_at timestamptz [default: `now()`]
+}
+
+Table collection_media {
+  collection_id uuid [ref: > collection.id]
+  media_id uuid [ref: > media_asset.id]
+
+  indexes { (collection_id, media_id) [pk] }
+}
+
+// ---------------- МУЗЕЙ ----------------
+
+Table exhibit {
+  id uuid [pk, default: `gen_random_uuid()`]
+  collection_id uuid [ref: > collection.id]
+  title varchar(500) [not null]
+  slug varchar(255) [unique]
+  summary text
+  model_uri varchar(1000) [note: 'glTF/GLB для 3D-експоната']
+  panorama_uri varchar(1000)
+  blocks jsonb [not null, note: 'масив блоків контенту (текст/медіа/3D/цитата/карта)']
+  curator_id uuid [ref: > app_user.id]
+  status content_status [default: 'draft']
+  published_at timestamptz
+  created_at timestamptz [default: `now()`]
+  updated_at timestamptz [default: `now()`]
+
+  indexes { collection_id; status }
+}
+
+Table exhibit_defender {
+  exhibit_id uuid [ref: > exhibit.id]
+  defender_id uuid [ref: > defender.id]
+
+  indexes { (exhibit_id, defender_id) [pk] }
+}
+
+// ---------------- ІСТОРІЇ ПАМʼЯТІ / СТАТТІ ----------------
+
+Table story {
+  id uuid [pk, default: `gen_random_uuid()`]
+  title varchar(500) [not null]
+  slug varchar(255) [unique, not null]
+  summary text
+  blocks jsonb [not null]
+  timeline jsonb [note: 'масив {date,title,media_id,body}']
+  cover_media_id uuid [ref: > media_asset.id]
+  author_id uuid [ref: > app_user.id]
+  status content_status [default: 'draft']
+  published_at timestamptz
+  created_at timestamptz [default: `now()`]
+  updated_at timestamptz [default: `now()`]
+
+  indexes { slug [unique]; status }
+}
+
+Table story_defender {
+  story_id uuid [ref: > story.id]
+  defender_id uuid [ref: > defender.id]
+
+  indexes { (story_id, defender_id) [pk] }
+}
+
+// ---------------- UGC / СПОГАДИ ----------------
+
+Table memory_ugc {
+  id uuid [pk, default: `gen_random_uuid()`]
+  defender_id uuid [ref: > defender.id, not null]
+  author_user_id uuid [ref: > app_user.id, not null]
+  body text [not null]
+  media_id uuid [ref: > media_asset.id]
+  status moderation_status [default: 'pending', not null]
+  moderated_by uuid [ref: > app_user.id]
+  moderated_at timestamptz
+  rejection_reason varchar(500)
+  created_at timestamptz [default: `now()`]
+
+  indexes { defender_id; status }
+}
+
+Enum moderation_status {
+  pending
+  approved
+  rejected
+  flagged
+}
+
+Table candle_lit {
+  id uuid [pk, default: `gen_random_uuid()`]
+  defender_id uuid [ref: > defender.id, not null]
+  user_id uuid [ref: > app_user.id, note: 'nullable — анонімний вхід через fingerprint']
+  session_fingerprint varchar(64)
+  created_at timestamptz [default: `now()`]
+
+  indexes {
+    (defender_id, user_id, created_at)
+    (defender_id, session_fingerprint, created_at)
+  }
+
+  Note: 'Rate-limit: 1 свічка на профіль на добу для одного user/fingerprint'
+}
+
+// ---------------- ЗАЯВКИ / ВЕРИФІКАЦІЯ ----------------
+
+Table defender_submission {
+  id uuid [pk, default: `gen_random_uuid()`]
+  submitted_by uuid [ref: > app_user.id, not null]
+  defender_id uuid [ref: > defender.id, note: 'null якщо новий профіль']
+  payload jsonb [not null, note: 'дані форми-майстра']
+  attached_media_ids uuid[] [note: 'масив id media_asset']
+  status moderation_status [default: 'pending', not null]
+  assigned_verifier_id uuid [ref: > app_user.id]
+  decision_note text
+  created_at timestamptz [default: `now()`]
+  decided_at timestamptz
+
+  indexes { status; submitted_by }
+}
+
+// ---------------- ВЕРСІОНУВАННЯ КОНТЕНТУ ----------------
+
+Table content_revision {
+  id uuid [pk, default: `gen_random_uuid()`]
+  entity_type varchar(30) [not null, note: 'defender|exhibit|story|place']
+  entity_id uuid [not null]
+  editor_id uuid [ref: > app_user.id]
+  diff jsonb [not null, note: 'JSON Patch до попередньої версії']
+  full_snapshot jsonb [note: 'періодичний повний знімок']
+  comment varchar(500)
+  created_at timestamptz [default: `now()`]
+
+  indexes { (entity_type, entity_id, created_at) }
+}
+
+// ---------------- AI / ПОШУК ----------------
+
+Table embedding {
+  id uuid [pk, default: `gen_random_uuid()`]
+  entity_type varchar(30) [not null]
+  entity_id uuid [not null]
+  model_name varchar(100) [not null]
+  vector vector(1536) [note: 'pgvector']
+  created_at timestamptz [default: `now()`]
+
+  indexes {
+    (entity_type, entity_id)
+    (vector) [type: hnsw]
+  }
+}
+
+Table ai_task {
+  id uuid [pk, default: `gen_random_uuid()`]
+  task_type varchar(50) [not null, note: 'ocr|caption|embed|translate|moderate']
+  entity_type varchar(30)
+  entity_id uuid
+  status varchar(30) [default: 'queued']
+  result jsonb
+  confidence numeric(4,3)
+  requires_human_review boolean [default: true]
+  reviewed_by uuid [ref: > app_user.id]
+  created_at timestamptz [default: `now()`]
+  completed_at timestamptz
+
+  indexes { status; task_type }
+}
+
+// ---------------- АУДИТ / БЕЗПЕКА ----------------
+
+Table audit_log {
+  id bigint [pk, increment]
+  actor_id uuid [ref: > app_user.id]
+  action varchar(100) [not null]
+  entity_type varchar(30)
+  entity_id uuid
+  diff jsonb
+  ip_address inet
+  user_agent varchar(500)
+  created_at timestamptz [default: `now()`]
+
+  indexes {
+    (entity_type, entity_id)
+    created_at
+    actor_id
+  }
+
+  Note: 'Партиціонування по created_at (місячні партиції), immutable (тільки INSERT)'
+}
+
+Table consent_record {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [ref: > app_user.id, not null]
+  defender_id uuid [ref: > defender.id]
+  consent_type varchar(50) [not null, note: 'publish_data|publish_media|process_pii']
+  granted boolean [not null]
+  document_media_id uuid [ref: > media_asset.id]
+  created_at timestamptz [default: `now()`]
+}

@@ -1,0 +1,705 @@
+// ============================================================
+// МЕМОРІАЛ — production-схема Prisma
+// 1:1 переклад docs/db/schema.dbml на PostgreSQL 16 + PostGIS 3.4 + pgvector.
+// Геометрія/вектор — через Unsupported(...) (Prisma не має нативного типу
+// geography/vector); запити з ними йдуть через $queryRaw в GIS/AI-сервісах.
+// ============================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis, pgvector(map: "vector"), pg_trgm]
+}
+
+// ---------------- ENUMS ----------------
+
+enum UserStatus {
+  active
+  suspended
+  deleted
+
+  @@map("user_status")
+}
+
+enum VerificationStatus {
+  draft
+  pending
+  verified
+  disputed
+  archived
+
+  @@map("verification_status")
+}
+
+enum ContentStatus {
+  draft
+  in_review
+  published
+  archived
+
+  @@map("content_status")
+}
+
+enum PlaceType {
+  battle
+  memorial
+  burial
+  monument
+  museum_site
+  frontline_segment
+
+  @@map("place_type")
+}
+
+enum MediaKind {
+  photo
+  video
+  audio
+  document
+  document_3d
+  panorama
+
+  @@map("media_kind")
+}
+
+enum ModerationStatus {
+  pending
+  approved
+  rejected
+  flagged
+
+  @@map("moderation_status")
+}
+
+// ---------------- ДОВІДНИКИ / IDENTITY ----------------
+
+model AppUser {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  authSubject       String   @unique @map("auth_subject") @db.VarChar(255)
+  email             String?  @unique @db.VarChar(320)
+  phone             String?  @db.VarChar(20)
+  displayName       String   @map("display_name") @db.VarChar(255)
+  avatarMediaId     String?  @map("avatar_media_id") @db.Uuid
+  avatarMedia       MediaAsset? @relation("UserAvatar", fields: [avatarMediaId], references: [id])
+  locale            String   @default("uk") @db.VarChar(5)
+  twoFactorEnabled  Boolean  @default(false) @map("two_factor_enabled")
+  status            UserStatus @default(active)
+  passwordHash      String?  @map("password_hash") @db.VarChar(255)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  roles                UserRole[]           @relation("UserRoles")
+  grantedRoles         UserRole[]           @relation("GrantedByUser")
+  apiKeys              ApiKey[]
+  placesCreated        Place[]              @relation("PlaceCreatedBy")
+  curatedRoutes        MemoryRoute[]
+  defendersCreated     Defender[]           @relation("DefenderCreatedBy")
+  defendersVerified    Defender[]           @relation("DefenderVerifiedBy")
+  defendersGuarded     Defender[]           @relation("DefenderGuardian")
+  mediaUploaded        MediaAsset[]         @relation("MediaUploadedBy")
+  exhibitsCurated      Exhibit[]
+  storiesAuthored      Story[]
+  memoriesAuthored     MemoryUgc[]          @relation("MemoryAuthor")
+  memoriesModerated    MemoryUgc[]          @relation("MemoryModerator")
+  candlesLit           CandleLit[]
+  submissionsSubmitted DefenderSubmission[] @relation("SubmissionSubmittedBy")
+  submissionsAssigned  DefenderSubmission[] @relation("SubmissionVerifier")
+  revisions            ContentRevision[]
+  aiTasksReviewed      AiTask[]
+  auditActions         AuditLog[]
+  consents             ConsentRecord[]
+
+  @@index([email])
+  @@map("app_user")
+}
+
+model Role {
+  id          Int     @id
+  code        String  @unique @db.VarChar(30)
+  nameUk      String  @map("name_uk") @db.VarChar(120)
+  description String?
+
+  userRoles UserRole[]
+
+  @@map("role")
+}
+
+model UserRole {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  user       AppUser   @relation("UserRoles", fields: [userId], references: [id])
+  roleId     Int       @map("role_id")
+  role       Role      @relation(fields: [roleId], references: [id])
+  scopeType  String?   @map("scope_type") @db.VarChar(30)
+  scopeId    String?   @map("scope_id") @db.Uuid
+  grantedBy  String?   @map("granted_by") @db.Uuid
+  grantedByUser AppUser? @relation("GrantedByUser", fields: [grantedBy], references: [id])
+  grantedAt  DateTime  @default(now()) @map("granted_at")
+
+  // Природний ключ з docs/db/schema.dbml — @@unique замість @@id,
+  // бо scope_type/scope_id можуть бути NULL (глобальна роль).
+  @@unique([userId, roleId, scopeType, scopeId])
+  @@map("user_role")
+}
+
+model ApiKey {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  user            AppUser   @relation(fields: [userId], references: [id])
+  keyHash         String    @unique @map("key_hash") @db.VarChar(128)
+  label           String?   @db.VarChar(120)
+  rateLimitPerMin Int       @default(60) @map("rate_limit_per_min")
+  scopes          String?   @db.VarChar(255)
+  lastUsedAt      DateTime? @map("last_used_at")
+  revokedAt       DateTime? @map("revoked_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@map("api_key")
+}
+
+// ---------------- ГЕОГРАФІЯ / АДМІНІСТРАТИВНИЙ ПОДІЛ ----------------
+
+model Region {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String   @db.VarChar(255)
+  koatuuCode String?  @map("koatuu_code") @db.VarChar(20)
+  parentId   String?  @map("parent_id") @db.Uuid
+  parent     Region?  @relation("RegionHierarchy", fields: [parentId], references: [id])
+  children   Region[] @relation("RegionHierarchy")
+  level      Int      @db.SmallInt
+
+  places    Place[]
+  defenders Defender[]
+
+  @@map("region")
+}
+
+model Place {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type          PlaceType
+  name          String        @db.VarChar(500)
+  slug          String?       @unique @db.VarChar(255)
+  description   String?
+  geomPoint     Unsupported("geography(Point,4326)")? @map("geom_point")
+  geomArea      Unsupported("geography(Polygon,4326)")? @map("geom_area")
+  regionId      String?       @map("region_id") @db.Uuid
+  region        Region?       @relation(fields: [regionId], references: [id])
+  dateFrom      DateTime?     @map("date_from") @db.Date
+  dateTo        DateTime?     @map("date_to") @db.Date
+  sensitivityLevel Int        @default(0) @map("sensitivity_level") @db.SmallInt
+  coverMediaId  String?       @map("cover_media_id") @db.Uuid
+  coverMedia    MediaAsset?   @relation("PlaceCover", fields: [coverMediaId], references: [id])
+  status        ContentStatus @default(draft)
+  createdBy     String?       @map("created_by") @db.Uuid
+  createdByUser AppUser?      @relation("PlaceCreatedBy", fields: [createdBy], references: [id])
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  birthOf        Defender[] @relation("DefenderBirthPlace")
+  deathOf        Defender[] @relation("DefenderDeathPlace")
+  burialOf       Defender[] @relation("DefenderBurialPlace")
+  defenderRoles  DefenderPlaceRole[]
+  routePlaces    MemoryRoutePlace[]
+
+  @@index([type])
+  @@index([regionId])
+  @@map("place")
+}
+
+model MemoryRoute {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title       String        @db.VarChar(500)
+  slug        String?       @unique @db.VarChar(255)
+  description String?
+  geomLine    Unsupported("geography(LineString,4326)")? @map("geom_line")
+  curatorId   String?       @map("curator_id") @db.Uuid
+  curator     AppUser?      @relation(fields: [curatorId], references: [id])
+  status      ContentStatus @default(draft)
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  places MemoryRoutePlace[]
+
+  @@map("memory_route")
+}
+
+model MemoryRoutePlace {
+  routeId  String      @map("route_id") @db.Uuid
+  route    MemoryRoute @relation(fields: [routeId], references: [id])
+  placeId  String      @map("place_id") @db.Uuid
+  place    Place       @relation(fields: [placeId], references: [id])
+  seqOrder Int         @map("seq_order") @db.SmallInt
+
+  @@id([routeId, placeId])
+  @@map("memory_route_place")
+}
+
+// ---------------- ВІЙСЬКОВІ ПІДРОЗДІЛИ ----------------
+
+model Unit {
+  id              String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parentId        String? @map("parent_id") @db.Uuid
+  parent          Unit?   @relation("UnitHierarchy", fields: [parentId], references: [id])
+  children        Unit[]  @relation("UnitHierarchy")
+  name            String  @db.VarChar(500)
+  officialNumber  String? @map("official_number") @db.VarChar(50)
+  type            String? @db.VarChar(100)
+  branch          String? @db.VarChar(100)
+  insigniaMediaId String? @map("insignia_media_id") @db.Uuid
+  insigniaMedia   MediaAsset? @relation("UnitInsignia", fields: [insigniaMediaId], references: [id])
+  description     String?
+
+  defenders Defender[]
+
+  @@index([parentId])
+  @@map("unit")
+}
+
+// ---------------- ЗАХИСНИКИ (CORE) ----------------
+
+model Defender {
+  id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pid                 String             @unique @db.VarChar(30)
+  fullName            String             @map("full_name") @db.VarChar(500)
+  fullNameNormalized  String             @map("full_name_normalized") @db.VarChar(500)
+  callsign            String?            @db.VarChar(120)
+  gender              String?            @db.VarChar(10)
+  birthDate           DateTime?          @map("birth_date") @db.Date
+  birthPlaceId        String?            @map("birth_place_id") @db.Uuid
+  birthPlace          Place?             @relation("DefenderBirthPlace", fields: [birthPlaceId], references: [id])
+  deathDate           DateTime?          @map("death_date") @db.Date
+  deathPlaceId        String?            @map("death_place_id") @db.Uuid
+  deathPlace          Place?             @relation("DefenderDeathPlace", fields: [deathPlaceId], references: [id])
+  burialPlaceId       String?            @map("burial_place_id") @db.Uuid
+  burialPlace         Place?             @relation("DefenderBurialPlace", fields: [burialPlaceId], references: [id])
+  unitId              String?            @map("unit_id") @db.Uuid
+  unit                Unit?              @relation(fields: [unitId], references: [id])
+  rank                String?            @db.VarChar(120)
+  bio                 String?
+  bioBlocks           Json?              @map("bio_blocks")
+  portraitMediaId     String?            @map("portrait_media_id") @db.Uuid
+  portraitMedia       MediaAsset?        @relation("DefenderPortrait", fields: [portraitMediaId], references: [id])
+  regionId            String?            @map("region_id") @db.Uuid
+  region              Region?            @relation(fields: [regionId], references: [id])
+  verificationStatus  VerificationStatus @default(pending) @map("verification_status")
+  verifiedBy          String?            @map("verified_by") @db.Uuid
+  verifiedByUser      AppUser?           @relation("DefenderVerifiedBy", fields: [verifiedBy], references: [id])
+  verifiedAt          DateTime?          @map("verified_at")
+  guardianUserId      String?            @map("guardian_user_id") @db.Uuid
+  guardianUser        AppUser?           @relation("DefenderGuardian", fields: [guardianUserId], references: [id])
+  candleCount         Int                @default(0) @map("candle_count")
+  status              ContentStatus      @default(draft)
+  createdBy           String?            @map("created_by") @db.Uuid
+  createdByUser       AppUser?           @relation("DefenderCreatedBy", fields: [createdBy], references: [id])
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+
+  awards              DefenderAward[]
+  placeRoles          DefenderPlaceRole[]
+  relationsFrom       DefenderRelation[] @relation("RelationFrom")
+  relationsTo         DefenderRelation[] @relation("RelationTo")
+  exhibits            ExhibitDefender[]
+  stories             StoryDefender[]
+  memories            MemoryUgc[]
+  candles             CandleLit[]
+  submissions         DefenderSubmission[]
+  consents            ConsentRecord[]
+
+  @@index([unitId])
+  @@index([verificationStatus])
+  @@index([regionId])
+  @@index([deathDate])
+  @@map("defender")
+}
+
+model DefenderAward {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  defenderId       String   @map("defender_id") @db.Uuid
+  defender         Defender @relation(fields: [defenderId], references: [id])
+  title            String   @db.VarChar(300)
+  awardedDate      DateTime? @map("awarded_date") @db.Date
+  decreeReference  String?  @map("decree_reference") @db.VarChar(255)
+  sourceId         String?  @map("source_id") @db.Uuid
+  source           Source?  @relation(fields: [sourceId], references: [id])
+
+  @@map("defender_award")
+}
+
+model DefenderPlaceRole {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  defenderId String    @map("defender_id") @db.Uuid
+  defender   Defender  @relation(fields: [defenderId], references: [id])
+  placeId    String    @map("place_id") @db.Uuid
+  place      Place     @relation(fields: [placeId], references: [id])
+  role       String    @db.VarChar(50)
+  dateFrom   DateTime? @map("date_from") @db.Date
+  dateTo     DateTime? @map("date_to") @db.Date
+
+  @@index([defenderId, placeId, role])
+  @@map("defender_place_role")
+}
+
+model DefenderRelation {
+  defenderId        String   @map("defender_id") @db.Uuid
+  defender          Defender @relation("RelationFrom", fields: [defenderId], references: [id])
+  relatedDefenderId String   @map("related_defender_id") @db.Uuid
+  relatedDefender   Defender @relation("RelationTo", fields: [relatedDefenderId], references: [id])
+  relationType      String   @map("relation_type") @db.VarChar(50)
+
+  @@id([defenderId, relatedDefenderId, relationType])
+  @@map("defender_relation")
+}
+
+// ---------------- МЕДІА / АРХІВ ----------------
+
+model MediaAsset {
+  id                 String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kind               MediaKind
+  title              String?       @db.VarChar(500)
+  description        String?
+  masterUri          String        @map("master_uri") @db.VarChar(1000)
+  storageChecksum    String        @map("storage_checksum") @db.VarChar(128)
+  mimeType           String?       @map("mime_type") @db.VarChar(120)
+  fileSizeBytes      BigInt?       @map("file_size_bytes")
+  width              Int?
+  height             Int?
+  durationSeconds    Decimal?      @map("duration_seconds") @db.Decimal(10, 2)
+  exif               Json?
+  ocrText            String?       @map("ocr_text")
+  ocrLang            String?       @map("ocr_lang") @db.VarChar(10)
+  iiifManifestUri    String?       @map("iiif_manifest_uri") @db.VarChar(1000)
+  rightsStatement    String        @map("rights_statement") @db.VarChar(255)
+  provenance         String?
+  aiGeneratedCaption Boolean       @default(false) @map("ai_generated_caption")
+  uploadedBy         String?       @map("uploaded_by") @db.Uuid
+  uploadedByUser     AppUser?      @relation("MediaUploadedBy", fields: [uploadedBy], references: [id])
+  partnerId          String?       @map("partner_id") @db.Uuid
+  partner            Partner?      @relation(fields: [partnerId], references: [id])
+  status             ContentStatus @default(draft)
+  createdAt          DateTime      @default(now()) @map("created_at")
+
+  derivatives      MediaDerivative[]
+  sources          Source[]
+  fixityChecks     MediaFixityCheck[]
+  collectionMedia  CollectionMedia[]
+  userAvatars      AppUser[]        @relation("UserAvatar")
+  placeCovers      Place[]          @relation("PlaceCover")
+  unitInsignia     Unit[]           @relation("UnitInsignia")
+  defenderPortraits Defender[]      @relation("DefenderPortrait")
+  memories         MemoryUgc[]
+  consents         ConsentRecord[]
+
+  @@index([kind])
+  @@index([status])
+  @@map("media_asset")
+}
+
+model MediaDerivative {
+  id      String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mediaId String     @map("media_id") @db.Uuid
+  media   MediaAsset @relation(fields: [mediaId], references: [id])
+  type    String?    @db.VarChar(50)
+  uri     String     @db.VarChar(1000)
+  width   Int?
+  height  Int?
+
+  @@index([mediaId])
+  @@map("media_derivative")
+}
+
+model MediaLink {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mediaId    String  @map("media_id") @db.Uuid
+  entityType String  @map("entity_type") @db.VarChar(30)
+  entityId   String  @map("entity_id") @db.Uuid
+  role       String? @db.VarChar(50)
+  sortOrder  Int     @default(0) @map("sort_order") @db.SmallInt
+
+  @@index([entityType, entityId])
+  @@map("media_link")
+}
+
+model Source {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mediaId      String?   @map("media_id") @db.Uuid
+  media        MediaAsset? @relation(fields: [mediaId], references: [id])
+  citation     String
+  provenance   String?
+  reliability  Int?      @db.SmallInt
+  externalUrl  String?   @map("external_url") @db.VarChar(1000)
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  awards DefenderAward[]
+
+  @@map("source")
+}
+
+model MediaFixityCheck {
+  id                String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mediaId           String     @map("media_id") @db.Uuid
+  media             MediaAsset @relation(fields: [mediaId], references: [id])
+  checksumVerified  String     @map("checksum_verified") @db.VarChar(128)
+  matched           Boolean
+  checkedAt         DateTime   @default(now()) @map("checked_at")
+
+  @@map("media_fixity_check")
+}
+
+// ---------------- ПАРТНЕРИ (МУЗЕЇ / АРХІВИ) ----------------
+
+model Partner {
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String  @db.VarChar(500)
+  type         String? @db.VarChar(50)
+  contactEmail String? @map("contact_email") @db.VarChar(320)
+  logoMediaId  String? @map("logo_media_id") @db.Uuid
+  status       String  @default("active") @db.VarChar(30)
+
+  media       MediaAsset[]
+  collections Collection[]
+
+  @@map("partner")
+}
+
+model Collection {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  partnerId   String?       @map("partner_id") @db.Uuid
+  partner     Partner?      @relation(fields: [partnerId], references: [id])
+  title       String        @db.VarChar(500)
+  slug        String?       @unique @db.VarChar(255)
+  description String?
+  status      ContentStatus @default(draft)
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  media    CollectionMedia[]
+  exhibits Exhibit[]
+
+  @@map("collection")
+}
+
+model CollectionMedia {
+  collectionId String     @map("collection_id") @db.Uuid
+  collection   Collection @relation(fields: [collectionId], references: [id])
+  mediaId      String     @map("media_id") @db.Uuid
+  media        MediaAsset @relation(fields: [mediaId], references: [id])
+
+  @@id([collectionId, mediaId])
+  @@map("collection_media")
+}
+
+// ---------------- МУЗЕЙ ----------------
+
+model Exhibit {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  collectionId String?       @map("collection_id") @db.Uuid
+  collection   Collection?   @relation(fields: [collectionId], references: [id])
+  title        String        @db.VarChar(500)
+  slug         String?       @unique @db.VarChar(255)
+  summary      String?
+  modelUri     String?       @map("model_uri") @db.VarChar(1000)
+  panoramaUri  String?       @map("panorama_uri") @db.VarChar(1000)
+  blocks       Json
+  curatorId    String?       @map("curator_id") @db.Uuid
+  curator      AppUser?      @relation(fields: [curatorId], references: [id])
+  status       ContentStatus @default(draft)
+  publishedAt  DateTime?     @map("published_at")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  defenders ExhibitDefender[]
+
+  @@index([collectionId])
+  @@index([status])
+  @@map("exhibit")
+}
+
+model ExhibitDefender {
+  exhibitId  String   @map("exhibit_id") @db.Uuid
+  exhibit    Exhibit  @relation(fields: [exhibitId], references: [id])
+  defenderId String   @map("defender_id") @db.Uuid
+  defender   Defender @relation(fields: [defenderId], references: [id])
+
+  @@id([exhibitId, defenderId])
+  @@map("exhibit_defender")
+}
+
+// ---------------- ІСТОРІЇ ПАМʼЯТІ / СТАТТІ ----------------
+
+model Story {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title        String        @db.VarChar(500)
+  slug         String        @unique @db.VarChar(255)
+  summary      String?
+  blocks       Json
+  timeline     Json?
+  coverMediaId String?       @map("cover_media_id") @db.Uuid
+  authorId     String?       @map("author_id") @db.Uuid
+  author       AppUser?      @relation(fields: [authorId], references: [id])
+  status       ContentStatus @default(draft)
+  publishedAt  DateTime?     @map("published_at")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  defenders StoryDefender[]
+
+  @@index([status])
+  @@map("story")
+}
+
+model StoryDefender {
+  storyId    String   @map("story_id") @db.Uuid
+  story      Story    @relation(fields: [storyId], references: [id])
+  defenderId String   @map("defender_id") @db.Uuid
+  defender   Defender @relation(fields: [defenderId], references: [id])
+
+  @@id([storyId, defenderId])
+  @@map("story_defender")
+}
+
+// ---------------- UGC / СПОГАДИ ----------------
+
+model MemoryUgc {
+  id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  defenderId       String            @map("defender_id") @db.Uuid
+  defender         Defender          @relation(fields: [defenderId], references: [id])
+  authorUserId     String            @map("author_user_id") @db.Uuid
+  author           AppUser           @relation("MemoryAuthor", fields: [authorUserId], references: [id])
+  body             String
+  mediaId          String?           @map("media_id") @db.Uuid
+  media            MediaAsset?       @relation(fields: [mediaId], references: [id])
+  status           ModerationStatus  @default(pending)
+  moderatedBy      String?           @map("moderated_by") @db.Uuid
+  moderator        AppUser?          @relation("MemoryModerator", fields: [moderatedBy], references: [id])
+  moderatedAt      DateTime?         @map("moderated_at")
+  rejectionReason  String?           @map("rejection_reason") @db.VarChar(500)
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  @@index([defenderId])
+  @@index([status])
+  @@map("memory_ugc")
+}
+
+model CandleLit {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  defenderId          String    @map("defender_id") @db.Uuid
+  defender            Defender  @relation(fields: [defenderId], references: [id])
+  userId              String?   @map("user_id") @db.Uuid
+  user                AppUser?  @relation(fields: [userId], references: [id])
+  sessionFingerprint  String?   @map("session_fingerprint") @db.VarChar(64)
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  @@index([defenderId, userId, createdAt])
+  @@index([defenderId, sessionFingerprint, createdAt])
+  @@map("candle_lit")
+}
+
+// ---------------- ЗАЯВКИ / ВЕРИФІКАЦІЯ ----------------
+
+model DefenderSubmission {
+  id                  String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  submittedBy         String            @map("submitted_by") @db.Uuid
+  submitter           AppUser           @relation("SubmissionSubmittedBy", fields: [submittedBy], references: [id])
+  defenderId          String?           @map("defender_id") @db.Uuid
+  defender            Defender?         @relation(fields: [defenderId], references: [id])
+  payload             Json
+  attachedMediaIds    String[]          @map("attached_media_ids") @db.Uuid
+  status              ModerationStatus  @default(pending)
+  assignedVerifierId  String?           @map("assigned_verifier_id") @db.Uuid
+  assignedVerifier    AppUser?          @relation("SubmissionVerifier", fields: [assignedVerifierId], references: [id])
+  decisionNote        String?           @map("decision_note")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  decidedAt           DateTime?         @map("decided_at")
+
+  @@index([status])
+  @@index([submittedBy])
+  @@map("defender_submission")
+}
+
+// ---------------- ВЕРСІОНУВАННЯ КОНТЕНТУ ----------------
+
+model ContentRevision {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityType   String   @map("entity_type") @db.VarChar(30)
+  entityId     String   @map("entity_id") @db.Uuid
+  editorId     String?  @map("editor_id") @db.Uuid
+  editor       AppUser? @relation(fields: [editorId], references: [id])
+  diff         Json
+  fullSnapshot Json?    @map("full_snapshot")
+  comment      String?  @db.VarChar(500)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId, createdAt])
+  @@map("content_revision")
+}
+
+// ---------------- AI / ПОШУК ----------------
+
+model Embedding {
+  id         String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityType String                    @map("entity_type") @db.VarChar(30)
+  entityId   String                    @map("entity_id") @db.Uuid
+  modelName  String                    @map("model_name") @db.VarChar(100)
+  vector     Unsupported("vector(1536)")
+  createdAt  DateTime                  @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@map("embedding")
+}
+
+model AiTask {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskType             String    @map("task_type") @db.VarChar(50)
+  entityType           String?   @map("entity_type") @db.VarChar(30)
+  entityId             String?   @map("entity_id") @db.Uuid
+  status               String    @default("queued") @db.VarChar(30)
+  result               Json?
+  confidence           Decimal?  @db.Decimal(4, 3)
+  requiresHumanReview  Boolean   @default(true) @map("requires_human_review")
+  reviewedBy           String?   @map("reviewed_by") @db.Uuid
+  reviewer             AppUser?  @relation(fields: [reviewedBy], references: [id])
+  createdAt            DateTime  @default(now()) @map("created_at")
+  completedAt          DateTime? @map("completed_at")
+
+  @@index([status])
+  @@index([taskType])
+  @@map("ai_task")
+}
+
+// ---------------- АУДИТ / БЕЗПЕКА ----------------
+
+model AuditLog {
+  id         BigInt   @id @default(autoincrement())
+  actorId    String?  @map("actor_id") @db.Uuid
+  actor      AppUser? @relation(fields: [actorId], references: [id])
+  action     String   @db.VarChar(100)
+  entityType String?  @map("entity_type") @db.VarChar(30)
+  entityId   String?  @map("entity_id") @db.Uuid
+  diff       Json?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent") @db.VarChar(500)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([actorId])
+  @@map("audit_log")
+}
+
+model ConsentRecord {
+  id               String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String     @map("user_id") @db.Uuid
+  user             AppUser    @relation(fields: [userId], references: [id])
+  defenderId       String?    @map("defender_id") @db.Uuid
+  defender         Defender?  @relation(fields: [defenderId], references: [id])
+  consentType      String     @map("consent_type") @db.VarChar(50)
+  granted          Boolean
+  documentMediaId  String?    @map("document_media_id") @db.Uuid
+  documentMedia    MediaAsset? @relation(fields: [documentMediaId], references: [id])
+  createdAt        DateTime   @default(now()) @map("created_at")
+
+  @@map("consent_record")
+}

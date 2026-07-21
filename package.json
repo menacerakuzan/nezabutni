@@ -1,0 +1,19 @@
+{
+  "name": "memorial-platform",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w apps/web",
+    "dev:api": "npm run dev -w apps/api",
+    "build": "npm run build -w apps/web",
+    "build:api": "npm run build -w apps/api",
+    "lint": "npm run lint -w apps/web"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

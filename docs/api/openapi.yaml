@@ -1,0 +1,1051 @@
+openapi: 3.1.0
+info:
+  title: Меморіал API
+  version: "1.0.0"
+  summary: Публічний та партнерський API національної/регіональної платформи памʼяті захисників.
+  description: |
+    Контракт відповідає Master Plan v1.0 (розділ 18 «API») та ER-моделі docs/db/schema.dbml.
+    Аутентифікація: OAuth2/OIDC (BankID/Дія.Підпис) для інтерактивних клієнтів,
+    API-key (Bearer) для програмного доступу з rate-limit.
+    Усі мутуючі запити підтримують заголовок `Idempotency-Key`.
+    Пагінація — cursor-based (`cursor`, `limit`), максимум `limit=100`.
+  contact:
+    name: Платформа «Меморіал» — команда розробки
+license:
+  name: Проприєтарний (державний проєкт)
+
+servers:
+  - url: https://api.memorial.gov.ua/v1
+    description: Production
+  - url: https://api.staging.memorial.gov.ua/v1
+    description: Staging
+
+tags:
+  - name: Defenders
+    description: Реєстр захисників — профілі, звʼязки, верифікація
+  - name: Places
+    description: GIS-обʼєкти карти памʼяті
+  - name: Archive
+    description: Медіа-архів, документи, метадані, IIIF
+  - name: Museum
+    description: Експозиції, колекції, історії памʼяті
+  - name: UGC
+    description: Спогади, свічки, заявки від громадян
+  - name: Partner
+    description: Кабінет партнера (музей/архів) — bulk-завантаження
+  - name: Moderation
+    description: Черга модерації та верифікації
+  - name: Search
+    description: Глобальний та розширений пошук
+  - name: Export
+    description: Експорт датасетів для дослідників
+  - name: Account
+    description: Кабінет користувача, API-ключі
+
+security:
+  - OAuth2: []
+  - ApiKeyAuth: []
+
+paths:
+  # ---------------- DEFENDERS ----------------
+  /defenders:
+    get:
+      tags: [Defenders]
+      summary: Список/пошук захисників
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: q
+          in: query
+          schema: { type: string }
+          description: Повнотекстовий пошук по імені (з толерантністю до опечаток)
+        - name: unit_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: region_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: verification_status
+          in: query
+          schema: { $ref: '#/components/schemas/VerificationStatus' }
+        - name: death_date_from
+          in: query
+          schema: { type: string, format: date }
+        - name: death_date_to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PagedResponse'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/DefenderSummary' }
+    post:
+      tags: [Defenders]
+      summary: Створити чернетку профілю (editor/moderator/admin)
+      security: [{ OAuth2: [write:defenders] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DefenderCreateInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Defender' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /defenders/{pid}:
+    parameters:
+      - name: pid
+        in: path
+        required: true
+        schema: { type: string, example: "MEM-2026-000123" }
+        description: Постійний ідентифікатор профілю
+    get:
+      tags: [Defenders]
+      summary: Отримати профіль захисника
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Defender' }
+            application/ld+json:
+              schema: { $ref: '#/components/schemas/Defender' }
+              description: JSON-LD представлення для федерації (Europeana-сумісне)
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Defenders]
+      summary: Редагувати профіль (editor або guardian_user)
+      security: [{ OAuth2: [write:defenders] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DefenderUpdateInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Defender' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /defenders/{pid}/memories:
+    parameters:
+      - name: pid
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [UGC]
+      summary: Список схвалених спогадів про захисника
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PagedResponse'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Memory' }
+    post:
+      tags: [UGC]
+      summary: Додати спогад (потребує модерації)
+      security: [{ OAuth2: [write:ugc] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MemoryCreateInput' }
+      responses:
+        '202':
+          description: Прийнято, статус pending
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Memory' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /defenders/{pid}/candles:
+    parameters:
+      - name: pid
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [UGC]
+      summary: "«Запалити свічку»"
+      security: [{ OAuth2: [] }, { ApiKeyAuth: [] }, {} ]
+      description: Доступно й анонімно (через session fingerprint), rate-limit 1/добу/профіль.
+      responses:
+        '201': { description: Свічку запалено }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /defenders/{pid}/timeline:
+    parameters:
+      - name: pid
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Defenders]
+      summary: Хронологія місць (боевий шлях) для карти
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DefenderPlaceEvent' }
+
+  /submissions:
+    post:
+      tags: [UGC]
+      summary: Подати заявку на створення/оновлення профілю (майстер 5 кроків)
+      security: [{ OAuth2: [write:submissions] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmissionInput' }
+      responses:
+        '202':
+          description: Заявку прийнято на розгляд
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Submission' }
+
+  # ---------------- PLACES / MAP ----------------
+  /places:
+    get:
+      tags: [Places]
+      summary: Список місць памʼяті (для карти)
+      parameters:
+        - name: bbox
+          in: query
+          schema: { type: string, example: "30.1,46.3,30.9,46.6" }
+          description: minLon,minLat,maxLon,maxLat
+        - name: layer
+          in: query
+          schema:
+            type: string
+            enum: [battle, memorial, burial, monument, museum_site, frontline_segment]
+        - name: date_from
+          in: query
+          schema: { type: string, format: date }
+        - name: date_to
+          in: query
+          schema: { type: string, format: date }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: GeoJSON FeatureCollection
+          content:
+            application/geo+json:
+              schema: { $ref: '#/components/schemas/GeoJSONFeatureCollection' }
+
+  /places/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Places]
+      summary: Картка місця
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Place' }
+
+  /memory-routes:
+    get:
+      tags: [Places]
+      summary: Маршрути памʼяті
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MemoryRoute' }
+
+  # ---------------- ARCHIVE ----------------
+  /archive/search:
+    get:
+      tags: [Archive]
+      summary: Розширений пошук по архіву (повнотекст OCR + фасети)
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum: [photo, video, audio, document, document_3d, panorama]
+        - name: date_from
+          in: query
+          schema: { type: string, format: date }
+        - name: date_to
+          in: query
+          schema: { type: string, format: date }
+        - name: rights_statement
+          in: query
+          schema: { type: string }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PagedResponse'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/MediaAssetSummary' }
+
+  /media/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Archive]
+      summary: Метадані медіаобʼєкта
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MediaAsset' }
+
+  /media/{id}/manifest:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Archive]
+      summary: IIIF Presentation Manifest для deep-zoom viewer
+      responses:
+        '200':
+          description: IIIF Manifest v3
+          content:
+            application/ld+json:
+              schema: { type: object }
+
+  # ---------------- MUSEUM ----------------
+  /exhibits:
+    get:
+      tags: [Museum]
+      summary: Список опублікованих експозицій
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: collection_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PagedResponse'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/ExhibitSummary' }
+
+  /exhibits/{slug}:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Museum]
+      summary: Експозиція повністю (блоки контенту)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Exhibit' }
+
+  /stories:
+    get:
+      tags: [Museum]
+      summary: Кураторські «історії памʼяті»
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PagedResponse'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/StorySummary' }
+
+  # ---------------- PARTNER ----------------
+  /partner/collections:
+    get:
+      tags: [Partner]
+      summary: Колекції партнера
+      security: [{ OAuth2: [partner:read] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Collection' }
+    post:
+      tags: [Partner]
+      summary: Створити колекцію
+      security: [{ OAuth2: [partner:write] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CollectionCreateInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Collection' }
+
+  /partner/collections/{id}/ingest:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Partner]
+      summary: Масове завантаження медіа у колекцію (bulk ingest)
+      security: [{ OAuth2: [partner:write] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items: { type: string, format: binary }
+                metadata_csv:
+                  type: string
+                  format: binary
+                  description: CSV з метаданими (Dublin Core mapping)
+      responses:
+        '202':
+          description: Прийнято в чергу обробки (вірусскан → OCR → тайли → AI-опис)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IngestBatch' }
+
+  /partner/collections/{id}/ingest/{batchId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: batchId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Partner]
+      summary: Статус пакетного завантаження
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IngestBatch' }
+
+  # ---------------- MODERATION ----------------
+  /moderation/queue:
+    get:
+      tags: [Moderation]
+      summary: Черга модерації (UGC, заявки, правки)
+      security: [{ OAuth2: [moderate:content] }]
+      parameters:
+        - name: entity_type
+          in: query
+          schema:
+            type: string
+            enum: [memory_ugc, defender_submission, content_revision]
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PagedResponse'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/ModerationItem' }
+
+  /moderation/queue/{id}/decision:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Moderation]
+      summary: Прийняти рішення (approve/reject)
+      security: [{ OAuth2: [moderate:content] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [approve, reject] }
+                reason: { type: string }
+      responses:
+        '200': { description: Рішення застосовано }
+
+  # ---------------- SEARCH ----------------
+  /search:
+    get:
+      tags: [Search]
+      summary: Глобальний миттєвий пошук (типи сутностей разом)
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2 }
+        - name: types
+          in: query
+          schema:
+            type: array
+            items: { type: string, enum: [defender, place, media, exhibit, story] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GlobalSearchResult' }
+
+  /search/semantic:
+    get:
+      tags: [Search]
+      summary: Семантичний пошук (векторна подібність)
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+        - name: entity_type
+          in: query
+          schema: { type: string, enum: [defender, media, story, exhibit] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SemanticSearchHit' }
+
+  # ---------------- EXPORT ----------------
+  /export:
+    get:
+      tags: [Export]
+      summary: Експорт датасету за збереженим запитом
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema: { type: string }
+        - name: format
+          in: query
+          schema: { type: string, enum: [csv, json, jsonld], default: json }
+      responses:
+        '200':
+          description: Файл датасету
+          content:
+            text/csv: { schema: { type: string } }
+            application/json: { schema: { type: array, items: { type: object } } }
+            application/ld+json: { schema: { type: array, items: { type: object } } }
+
+  # ---------------- ACCOUNT ----------------
+  /account/me:
+    get:
+      tags: [Account]
+      summary: Профіль поточного користувача
+      security: [{ OAuth2: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+
+  /account/api-keys:
+    get:
+      tags: [Account]
+      summary: Список API-ключів
+      security: [{ OAuth2: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ApiKeySummary' }
+    post:
+      tags: [Account]
+      summary: Створити новий API-ключ
+      security: [{ OAuth2: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label: { type: string }
+                scopes: { type: array, items: { type: string } }
+      responses:
+        '201':
+          description: Ключ створено (значення показується один раз)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiKeyCreated' }
+
+components:
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.memorial.gov.ua/oauth2/authorize
+          tokenUrl: https://auth.memorial.gov.ua/oauth2/token
+          scopes:
+            read:defenders: Читання профілів
+            write:defenders: Редагування профілів
+            write:ugc: Додавання спогадів/заявок
+            write:submissions: Подання заявок
+            partner:read: Читання даних партнера
+            partner:write: Завантаження даних партнера
+            moderate:content: Модерація черги
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+      description: Курсор пагінації з попередньої відповіді
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string }
+      description: Гарантує ідемпотентність повторних POST-запитів
+
+  responses:
+    NotFound:
+      description: Обʼєкт не знайдено
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ValidationError:
+      description: Помилка валідації вхідних даних
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ValidationErrorBody' }
+    Conflict:
+      description: Конфлікт версій (потрібна повторна синхронізація)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Перевищено ліміт запитів
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        trace_id: { type: string }
+
+    ValidationErrorBody:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            fields:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  issue: { type: string }
+
+    PagedResponse:
+      type: object
+      properties:
+        next_cursor: { type: string, nullable: true }
+        total_estimate: { type: integer }
+
+    VerificationStatus:
+      type: string
+      enum: [draft, pending, verified, disputed, archived]
+
+    DefenderSummary:
+      type: object
+      properties:
+        pid: { type: string, example: "MEM-2026-000123" }
+        full_name: { type: string }
+        callsign: { type: string, nullable: true }
+        birth_date: { type: string, format: date, nullable: true }
+        death_date: { type: string, format: date, nullable: true }
+        unit_name: { type: string, nullable: true }
+        portrait_url: { type: string, nullable: true }
+        verification_status: { $ref: '#/components/schemas/VerificationStatus' }
+
+    Defender:
+      allOf:
+        - $ref: '#/components/schemas/DefenderSummary'
+        - type: object
+          properties:
+            bio: { type: string }
+            bio_blocks: { type: array, items: { type: object } }
+            rank: { type: string }
+            awards:
+              type: array
+              items:
+                type: object
+                properties:
+                  title: { type: string }
+                  awarded_date: { type: string, format: date }
+            places:
+              type: array
+              items: { $ref: '#/components/schemas/DefenderPlaceEvent' }
+            candle_count: { type: integer }
+            guardian_user_id: { type: string, format: uuid, nullable: true }
+
+    DefenderCreateInput:
+      type: object
+      required: [full_name]
+      properties:
+        full_name: { type: string }
+        callsign: { type: string }
+        birth_date: { type: string, format: date }
+        death_date: { type: string, format: date }
+        unit_id: { type: string, format: uuid }
+        bio: { type: string }
+
+    DefenderUpdateInput:
+      type: object
+      properties:
+        full_name: { type: string }
+        callsign: { type: string }
+        bio: { type: string }
+        rank: { type: string }
+        unit_id: { type: string, format: uuid }
+
+    DefenderPlaceEvent:
+      type: object
+      properties:
+        place_id: { type: string, format: uuid }
+        place_name: { type: string }
+        role: { type: string, enum: [served_at, fought_at, died_at, buried_at, born_at] }
+        date_from: { type: string, format: date, nullable: true }
+        date_to: { type: string, format: date, nullable: true }
+        lon: { type: number }
+        lat: { type: number }
+
+    Memory:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        defender_pid: { type: string }
+        author_display_name: { type: string }
+        body: { type: string }
+        media_url: { type: string, nullable: true }
+        status: { type: string, enum: [pending, approved, rejected, flagged] }
+        created_at: { type: string, format: date-time }
+
+    MemoryCreateInput:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 10, maxLength: 5000 }
+        media_id: { type: string, format: uuid }
+
+    SubmissionInput:
+      type: object
+      required: [payload, consent]
+      properties:
+        defender_pid: { type: string, nullable: true, description: "null для нового профілю" }
+        payload:
+          type: object
+          description: Дані 5-крокового майстра (особа/служба/документи/медіа)
+        attached_media_ids:
+          type: array
+          items: { type: string, format: uuid }
+        consent:
+          type: object
+          required: [publish_data, process_pii]
+          properties:
+            publish_data: { type: boolean }
+            publish_media: { type: boolean }
+            process_pii: { type: boolean }
+
+    Submission:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [pending, approved, rejected, flagged] }
+        created_at: { type: string, format: date-time }
+
+    GeoJSONFeatureCollection:
+      type: object
+      properties:
+        type: { type: string, enum: [FeatureCollection] }
+        features:
+          type: array
+          items:
+            type: object
+            properties:
+              type: { type: string, enum: [Feature] }
+              geometry: { type: object }
+              properties:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  name: { type: string }
+                  place_type: { type: string }
+
+    Place:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        name: { type: string }
+        description: { type: string }
+        lon: { type: number }
+        lat: { type: number }
+        region_name: { type: string }
+        cover_media_url: { type: string, nullable: true }
+        related_defenders_count: { type: integer }
+
+    MemoryRoute:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        places:
+          type: array
+          items: { type: string, format: uuid }
+
+    MediaAssetSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string }
+        title: { type: string, nullable: true }
+        thumbnail_url: { type: string, nullable: true }
+        rights_statement: { type: string }
+        date: { type: string, nullable: true }
+
+    MediaAsset:
+      allOf:
+        - $ref: '#/components/schemas/MediaAssetSummary'
+        - type: object
+          properties:
+            ocr_text: { type: string, nullable: true }
+            exif: { type: object, nullable: true }
+            provenance: { type: string, nullable: true }
+            iiif_manifest_url: { type: string, nullable: true }
+            derivatives:
+              type: array
+              items:
+                type: object
+                properties:
+                  type: { type: string }
+                  url: { type: string }
+
+    ExhibitSummary:
+      type: object
+      properties:
+        slug: { type: string }
+        title: { type: string }
+        summary: { type: string }
+        cover_url: { type: string, nullable: true }
+
+    Exhibit:
+      allOf:
+        - $ref: '#/components/schemas/ExhibitSummary'
+        - type: object
+          properties:
+            blocks: { type: array, items: { type: object } }
+            model_uri: { type: string, nullable: true }
+            panorama_uri: { type: string, nullable: true }
+            related_defenders:
+              type: array
+              items: { type: string }
+
+    StorySummary:
+      type: object
+      properties:
+        slug: { type: string }
+        title: { type: string }
+        summary: { type: string }
+        cover_url: { type: string, nullable: true }
+        published_at: { type: string, format: date-time, nullable: true }
+
+    Collection:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        status: { type: string }
+        media_count: { type: integer }
+
+    CollectionCreateInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        description: { type: string }
+
+    IngestBatch:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [queued, scanning, processing, review, done, failed] }
+        total_files: { type: integer }
+        processed_files: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    ModerationItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        entity_type: { type: string }
+        entity_id: { type: string, format: uuid }
+        preview: { type: string }
+        submitted_by: { type: string }
+        ai_flags:
+          type: array
+          items: { type: string }
+        created_at: { type: string, format: date-time }
+
+    GlobalSearchResult:
+      type: object
+      properties:
+        defenders: { type: array, items: { $ref: '#/components/schemas/DefenderSummary' } }
+        places: { type: array, items: { $ref: '#/components/schemas/Place' } }
+        media: { type: array, items: { $ref: '#/components/schemas/MediaAssetSummary' } }
+        exhibits: { type: array, items: { $ref: '#/components/schemas/ExhibitSummary' } }
+        stories: { type: array, items: { $ref: '#/components/schemas/StorySummary' } }
+
+    SemanticSearchHit:
+      type: object
+      properties:
+        entity_type: { type: string }
+        entity_id: { type: string, format: uuid }
+        score: { type: number }
+        preview: { type: string }
+
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        display_name: { type: string }
+        email: { type: string, nullable: true }
+        roles: { type: array, items: { type: string } }
+
+    ApiKeySummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        label: { type: string }
+        scopes: { type: array, items: { type: string } }
+        last_used_at: { type: string, format: date-time, nullable: true }
+
+    ApiKeyCreated:
+      allOf:
+        - $ref: '#/components/schemas/ApiKeySummary'
+        - type: object
+          properties:
+            secret: { type: string, description: "Показується один раз при створенні" }
