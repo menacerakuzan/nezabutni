@@ -1,8 +1,8 @@
 // ============================================================
 // МЕМОРІАЛ — production-схема Prisma
-// 1:1 переклад docs/db/schema.dbml на PostgreSQL 16 + PostGIS 3.4 + pgvector.
-// Геометрія/вектор — через Unsupported(...) (Prisma не має нативного типу
-// geography/vector); запити з ними йдуть через $queryRaw в GIS/AI-сервісах.
+// 1:1 переклад docs/db/schema.dbml на PostgreSQL 16 + PostGIS 3.4.
+// Геометрія — через Unsupported(geography) (Prisma не має нативного типу);
+// запити з нею йдуть через $queryRaw в GIS-сервісах (карта, маршрути).
 // ============================================================
 
 generator client {
@@ -13,7 +13,7 @@ generator client {
 datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
-  extensions = [postgis, pgvector(map: "vector"), pg_trgm]
+  extensions = [postgis, pg_trgm]
 }
 
 // ---------------- ENUMS ----------------
@@ -110,7 +110,6 @@ model AppUser {
   submissionsSubmitted DefenderSubmission[] @relation("SubmissionSubmittedBy")
   submissionsAssigned  DefenderSubmission[] @relation("SubmissionVerifier")
   revisions            ContentRevision[]
-  aiTasksReviewed      AiTask[]
   auditActions         AuditLog[]
   consents             ConsentRecord[]
 
@@ -638,36 +637,7 @@ model ContentRevision {
 
 // ---------------- AI / ПОШУК ----------------
 
-model Embedding {
-  id         String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  entityType String                    @map("entity_type") @db.VarChar(30)
-  entityId   String                    @map("entity_id") @db.Uuid
-  modelName  String                    @map("model_name") @db.VarChar(100)
-  vector     Unsupported("vector(1536)")
-  createdAt  DateTime                  @default(now()) @map("created_at")
 
-  @@index([entityType, entityId])
-  @@map("embedding")
-}
-
-model AiTask {
-  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  taskType             String    @map("task_type") @db.VarChar(50)
-  entityType           String?   @map("entity_type") @db.VarChar(30)
-  entityId             String?   @map("entity_id") @db.Uuid
-  status               String    @default("queued") @db.VarChar(30)
-  result               Json?
-  confidence           Decimal?  @db.Decimal(4, 3)
-  requiresHumanReview  Boolean   @default(true) @map("requires_human_review")
-  reviewedBy           String?   @map("reviewed_by") @db.Uuid
-  reviewer             AppUser?  @relation(fields: [reviewedBy], references: [id])
-  createdAt            DateTime  @default(now()) @map("created_at")
-  completedAt          DateTime? @map("completed_at")
-
-  @@index([status])
-  @@index([taskType])
-  @@map("ai_task")
-}
 
 // ---------------- АУДИТ / БЕЗПЕКА ----------------
 
@@ -702,4 +672,44 @@ model ConsentRecord {
   createdAt        DateTime   @default(now()) @map("created_at")
 
   @@map("consent_record")
+}
+
+// ─────────────────────────────────────────────────────────────
+// CMS: те, що раніше було зашите в код фронтенду
+// ─────────────────────────────────────────────────────────────
+
+/// Пункт навігації. Редагується в адмінці, віддається публічним API.
+model MenuItem {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  label     String   @db.VarChar(120)
+  href      String   @db.VarChar(255)
+  /// header | footer_memorial | footer_platform | footer_join
+  location  String   @db.VarChar(40)
+  parentId  String?  @map("parent_id") @db.Uuid
+  parent    MenuItem?  @relation("MenuChildren", fields: [parentId], references: [id])
+  children  MenuItem[] @relation("MenuChildren")
+  sortOrder Int      @default(0) @map("sort_order") @db.SmallInt
+  visible   Boolean  @default(true)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([location, sortOrder])
+  @@map("menu_item")
+}
+
+/// Блок сторінки: порядок і видимість секцій без правок коду.
+model PageBlock {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// home | museum | map | about …
+  page      String   @db.VarChar(60)
+  /// Ключ компонента в дизайн-системі (FieldOfLights, MemorialWall…)
+  blockType String   @map("block_type") @db.VarChar(80)
+  label     String   @db.VarChar(200)
+  /// Довільні пропси блока — заголовки, підписи, посилання.
+  props     Json?
+  sortOrder Int      @default(0) @map("sort_order") @db.SmallInt
+  visible   Boolean  @default(true)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([page, sortOrder])
+  @@map("page_block")
 }

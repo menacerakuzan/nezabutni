@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../../components/AuthProvider";
 import { authFetch } from "../../../lib/auth-client";
+import { FileUpload, type UploadedMedia } from "../../../components/FileUpload";
 
 const STEPS = ["Особа", "Служба", "Документи", "Медіа", "Згода"];
 
@@ -21,6 +22,7 @@ export default function NewSubmissionPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [media, setMedia] = useState<UploadedMedia[]>([]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -37,7 +39,8 @@ export default function NewSubmissionPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         payload: { fullName, birthDate, deathDate, birthPlace },
-        consent: { publishData, processPii, publishMedia: false },
+        attachedMediaIds: media.map((m) => m.id),
+        consent: { publishData, processPii, publishMedia: media.length > 0 },
       }),
     });
     setSubmitting(false);
@@ -100,8 +103,8 @@ export default function NewSubmissionPage() {
         Подати інформацію про захисника
       </h1>
       <p className="mt-4 text-ink">
-        Дані потраплять у чергу верифікації відповідального органу
-        (docs/prd/01-defenders-registry.md, п. 3.4).
+        Дані потраплять у чергу верифікації. Модератори звіряють їх із документами,
+        і лише після цього історія з’являється в меморіалі.
       </p>
 
       <ol className="mt-6 flex flex-wrap gap-2 text-xs">
@@ -161,6 +164,14 @@ export default function NewSubmissionPage() {
             onChange={(e) => setBirthPlace(e.target.value)}
             className="mt-1 w-full py-2.5 text-cream"
           />
+        </div>
+
+        <div>
+          <span className="caption">Світлини й документи</span>
+          <p className="mt-2 mb-3 text-sm text-ink">
+            Портрет, листи, нагороди, документи — усе, що допоможе зберегти історію.
+          </p>
+          <FileUpload onChange={setMedia} />
         </div>
 
         <div className="space-y-2 rounded-md bg-white/[0.04] p-4">

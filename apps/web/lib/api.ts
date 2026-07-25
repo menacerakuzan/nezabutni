@@ -7,40 +7,90 @@ export interface DefenderDetail extends DefenderSummary {
   candleCount: number;
 }
 
+/**
+ * Результат запиту з явним розрізненням «порожньо» і «недоступно».
+ *
+ * Це принципово для меморіалу: якщо база недоступна, сторінка мусить
+ * сказати про це чесно, а не показати демонстраційні імена так, ніби це
+ * реальні загиблі. Мовчазний фолбэк на моки — неприпустимий.
+ */
+export type Result<T> =
+  | { ok: true; data: T }
+  | { ok: false; reason: "unavailable" | "not_found" };
+
+async function get<T>(path: string, revalidate = 30): Promise<Result<T>> {
+  try {
+    const res = await fetch(`${API_URL}${path}`, { next: { revalidate } });
+    if (res.status === 404) return { ok: false, reason: "not_found" };
+    if (!res.ok) return { ok: false, reason: "unavailable" };
+    return { ok: true, data: (await res.json()) as T };
+  } catch {
+    return { ok: false, reason: "unavailable" };
+  }
+}
+
 export async function fetchDefenders(params?: {
   q?: string;
   unitId?: string;
   regionId?: string;
-}): Promise<DefenderSummary[]> {
+}): Promise<Result<DefenderSummary[]>> {
   const qs = new URLSearchParams();
   if (params?.q) qs.set("q", params.q);
   if (params?.unitId) qs.set("unit_id", params.unitId);
   if (params?.regionId) qs.set("region_id", params.regionId);
 
-  try {
-    const res = await fetch(`${API_URL}/defenders?${qs.toString()}`, {
-      next: { revalidate: 30 },
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.items as DefenderSummary[];
-  } catch {
-    return [];
-  }
+  const r = await get<{ items: DefenderSummary[] }>(`/defenders?${qs.toString()}`);
+  return r.ok ? { ok: true, data: r.data.items } : r;
 }
 
-export async function fetchDefenderByPid(pid: string): Promise<DefenderDetail | null> {
-  try {
-    const res = await fetch(`${API_URL}/defenders/${pid}`, { next: { revalidate: 30 } });
-    if (!res.ok) return null;
-    return (await res.json()) as DefenderDetail;
-  } catch {
-    return null;
-  }
+export async function fetchDefenderByPid(pid: string): Promise<Result<DefenderDetail>> {
+  return get<DefenderDetail>(`/defenders/${encodeURIComponent(pid)}`);
+}
+
+export interface Stats {
+  total: number;
+  verified: number;
+  pending: number;
+  places: number;
+  units: number;
+}
+
+export async function fetchStats(): Promise<Result<Stats>> {
+  return get<Stats>("/stats", 60);
+}
+
+// ── Структура сайту (керується з адмінки) ──
+
+export type MenuMap = Record<string, { label: string; href: string }[]>;
+
+export async function fetchMenu(): Promise<Result<MenuMap>> {
+  return get<MenuMap>("/site/menu", 300);
+}
+
+export interface RouteStop {
+  name: string;
+  text: string | null;
+  placeId: string;
+  /** [довгота, широта] з PostGIS — для перельоту камери */
+  center: [number, number];
+}
+export interface MemoryRoute {
+  slug: string | null;
+  title: string;
+  description: string | null;
+  stops: RouteStop[];
+}
+
+export async function fetchRoutes(): Promise<Result<MemoryRoute[]>> {
+  return get<MemoryRoute[]>("/site/routes", 300);
 }
 
 export async function lightCandle(pid: string): Promise<{ candleCount: number } | null> {
-  const res = await fetch(`${API_URL}/defenders/${pid}/candles`, { method: "POST" });
-  if (!res.ok) return null;
-  return await res.json();
+  try {
+    const res = await fetch(`${API_URL}/defenders/${pid}/candles`, { method: "POST" });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
 }

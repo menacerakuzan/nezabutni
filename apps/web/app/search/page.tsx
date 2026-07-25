@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { DefenderCardRow } from "../../components/DefenderCardRow";
-import { MOCK_DEFENDERS } from "../../lib/mock-data";
 import { fetchDefenders } from "../../lib/api";
+import { DataUnavailable } from "../../components/DataUnavailable";
 
 export const metadata = { title: "Пошук — Незабутні" };
 
@@ -11,11 +11,9 @@ export default async function SearchPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const { q } = await searchParams;
-  const results = q ? await fetchDefenders({ q }) : [];
-  const fallback = q && results.length === 0
-    ? MOCK_DEFENDERS.filter((d) => d.fullName.toLowerCase().includes(q.toLowerCase()))
-    : [];
-  const items = results.length > 0 ? results : fallback;
+  const result = q ? await fetchDefenders({ q }) : null;
+  const items = result?.ok ? result.data : [];
+  const unavailable = result !== null && !result.ok;
 
   return (
     <div className="mx-auto max-w-4xl px-6 pb-16 pt-28">
@@ -47,7 +45,8 @@ export default async function SearchPage({
 
       <div className="mt-8">
         {!q && <p className="text-sm text-ink-lo">Введіть ім’я, щоб почати пошук.</p>}
-        {q && items.length === 0 && (
+        {unavailable && <DataUnavailable title="Пошук тимчасово недоступний" />}
+        {q && !unavailable && items.length === 0 && (
           <div className="rounded-lg border border-hair bg-white/[0.03] p-6">
             <p className="text-ink">Профіль не знайдено за запитом «{q}».</p>
             <Link href="/submissions/new" className="mt-3 inline-block text-sm text-gold hover:text-gold-soft">

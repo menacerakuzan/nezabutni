@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MEDIA } from "../lib/media";
+import { fetchRoutes, type MemoryRoute } from "../lib/api";
 
 interface PlaceFeature {
   type: "Feature";
@@ -32,33 +33,6 @@ const TYPE_PHOTO: Record<string, string> = {
 // Приглушений темний стиль CARTO — тимчасовий, до власного тайл-сервера.
 const STYLE_URL = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 
-/** Демонстраційний «Маршрут пам’яті» — кінематографічні перельоти камери. */
-const ROUTE = [
-  {
-    name: "Одеса · Алея Слави",
-    text: "Меморіальний комплекс у парку Шевченка. Тут поховані захисники міста різних поколінь.",
-    center: [30.7326, 46.4691] as [number, number],
-    zoom: 14.5,
-    pitch: 55,
-    bearing: -20,
-  },
-  {
-    name: "Білгород-Дністровський",
-    text: "Місто-фортеця. Меморіал захисникам на центральній площі.",
-    center: [30.35, 46.1927] as [number, number],
-    zoom: 13.5,
-    pitch: 45,
-    bearing: 15,
-  },
-  {
-    name: "Ізмаїл",
-    text: "Південний форпост. Місця пам’яті придунайських громад.",
-    center: [28.8367, 45.3516] as [number, number],
-    zoom: 13,
-    pitch: 50,
-    bearing: -10,
-  },
-];
 
 export function MapView() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -68,6 +42,14 @@ export function MapView() {
   const [activeTypes, setActiveTypes] = useState<Set<string>>(new Set(Object.keys(TYPE_LABEL)));
   const [routeStep, setRouteStep] = useState<number | null>(null);
   const [pano, setPano] = useState<string | null>(null);
+  // Маршрут пам'яті приходить з CMS (memory_route + місця), а не з коду
+  const [route, setRoute] = useState<MemoryRoute | null>(null);
+
+  useEffect(() => {
+    fetchRoutes().then((r) => {
+      if (r.ok && r.data.length) setRoute(r.data[0]!);
+    });
+  }, []);
 
   // фільтр за типами
   useEffect(() => {
@@ -178,11 +160,20 @@ export function MapView() {
 
   const flyToStep = (i: number) => {
     const map = mapRef.current;
-    if (!map) return;
+    const stop = route?.stops[i];
+    if (!map || !stop) return;
     setRouteStep(i);
     setSelected(null);
-    const s = ROUTE[i]!;
-    map.flyTo({ ...s, duration: 3200, essential: true, curve: 1.6 });
+    // Ракурс варіюємо за індексом — обліт не виглядає механічним
+    map.flyTo({
+      center: stop.center,
+      zoom: 13.5,
+      pitch: 45 + (i % 3) * 5,
+      bearing: i % 2 ? 15 : -20,
+      duration: 3200,
+      essential: true,
+      curve: 1.6,
+    });
   };
   const exitRoute = () => {
     setRouteStep(null);
@@ -226,17 +217,17 @@ export function MapView() {
         })}
       </div>
 
-      {/* Маршрут пам’яті */}
+      {/* Маршрут пам’яті — з CMS; якщо маршрутів немає, картку не показуємо */}
+      {route && route.stops.length > 0 && (
       <div className="absolute bottom-4 left-4 w-[min(88vw,340px)] rounded-[4px] border border-hair-strong bg-[#0B0F16]/95 backdrop-blur-md">
         {routeStep === null ? (
           <div className="p-5">
             <span className="caption">Маршрут пам’яті</span>
             <h3 className="mt-2 font-display text-xl font-semibold text-cream">
-              Південний рубіж
+              {route.title}
             </h3>
             <p className="mt-1.5 text-sm text-ink">
-              Три місця пам’яті регіону — кінематографічний обліт: Одеса → Білгород-Дністровський →
-              Ізмаїл.
+              {route.description ?? `${route.stops.length} місць пам’яті — кінематографічний обліт.`}
             </p>
             <button
               onClick={() => flyToStep(0)}
@@ -249,16 +240,16 @@ export function MapView() {
           <div className="p-5">
             <div className="flex items-center justify-between">
               <span className="caption">
-                Зупинка {routeStep + 1} / {ROUTE.length}
+                Зупинка {routeStep + 1} / {route?.stops.length ?? 0}
               </span>
               <button onClick={exitRoute} className="text-xs text-ink-lo hover:text-cream">
                 Завершити ✕
               </button>
             </div>
             <h3 className="mt-2 font-display text-xl font-semibold text-cream">
-              {ROUTE[routeStep]!.name}
+              {route?.stops[routeStep]?.name}
             </h3>
-            <p className="mt-1.5 text-sm text-ink">{ROUTE[routeStep]!.text}</p>
+            <p className="mt-1.5 text-sm text-ink">{route?.stops[routeStep]?.text}</p>
             <div className="mt-4 flex gap-2">
               <button
                 onClick={() => flyToStep(Math.max(0, routeStep - 1))}
@@ -267,7 +258,7 @@ export function MapView() {
               >
                 ← Назад
               </button>
-              {routeStep < ROUTE.length - 1 ? (
+              {routeStep < (route?.stops.length ?? 0) - 1 ? (
                 <button
                   onClick={() => flyToStep(routeStep + 1)}
                   className="rounded-[3px] bg-cream px-3.5 py-2 text-sm font-medium text-void transition-colors hover:bg-white"
@@ -286,6 +277,7 @@ export function MapView() {
           </div>
         )}
       </div>
+      )}
 
       {/* картка місця */}
       {selected && (

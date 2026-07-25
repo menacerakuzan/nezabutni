@@ -2,15 +2,16 @@
 import Link from "next/link";
 import { Reveal } from "../../components/Reveal";
 import { portraitFor } from "../../lib/media";
-import { MOCK_DEFENDERS, formatDates } from "../../lib/mock-data";
+import { formatDates } from "../../lib/mock-data";
+import { DataUnavailable } from "../../components/DataUnavailable";
 import { fetchDefenders } from "../../lib/api";
 
 export const metadata = { title: "Реєстр імен — Незабутні" };
 export const revalidate = 30;
 
 export default async function DefendersPage() {
-  const fromApi = await fetchDefenders();
-  const defenders = fromApi.length > 0 ? fromApi : MOCK_DEFENDERS;
+  const result = await fetchDefenders();
+  const defenders = result.ok ? result.data : [];
 
   return (
     <>
@@ -45,6 +46,13 @@ export default async function DefendersPage() {
 
       {/* Реєстр як editorial-полотно великих імен */}
       <section className="mx-auto max-w-6xl px-6 pb-24">
+        {!result.ok && <DataUnavailable />}
+        {result.ok && defenders.length === 0 && (
+          <DataUnavailable
+            title="У реєстрі поки немає імен"
+            hint="Щойно родини подадуть перші історії й модератори їх звірять, імена з’являться тут."
+          />
+        )}
         <ul className="border-t border-hair">
           {defenders.map((d, i) => (
             <Reveal as="li" key={d.pid} delay={(i % 8) * 0.03}>

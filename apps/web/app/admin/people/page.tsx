@@ -3,19 +3,20 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { DefenderSummary } from "../../../lib/types";
-import { MOCK_DEFENDERS, formatDates } from "../../../lib/mock-data";
+import { formatDates } from "../../../lib/mock-data";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api/v1";
 
 export default function AdminPeoplePage() {
   const [items, setItems] = useState<DefenderSummary[]>([]);
   const [q, setQ] = useState("");
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     fetch(`${API}/defenders`)
       .then((r) => (r.ok ? r.json() : { items: [] }))
-      .then((d) => setItems(d.items?.length ? d.items : MOCK_DEFENDERS))
-      .catch(() => setItems(MOCK_DEFENDERS));
+      .then((d) => setItems(d.items ?? []))
+      .catch(() => setError(true));
   }, []);
 
   const filtered = useMemo(
@@ -37,6 +38,12 @@ export default function AdminPeoplePage() {
           + Нова заявка
         </Link>
       </header>
+
+      {error && (
+        <p className="mt-6 border-l-2 border-crimson-bright pl-4 text-sm text-ink">
+          Реєстр недоступний — перевірте, чи запущений API.
+        </p>
+      )}
 
       <input
         type="search"

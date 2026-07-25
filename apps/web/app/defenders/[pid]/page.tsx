@@ -8,7 +8,8 @@ import { WhatRemains } from "../../../components/blocks/WhatRemains";
 import { ContinueExploring } from "../../../components/blocks/ContinueExploring";
 import { Expandable } from "../../../components/Expandable";
 import { Reveal } from "../../../components/Reveal";
-import { getDefenderByPid, formatDates } from "../../../lib/mock-data";
+import { DataUnavailable } from "../../../components/DataUnavailable";
+import { formatDates } from "../../../lib/mock-data";
 import { portraitFor, MEDIA } from "../../../lib/media";
 import { fetchDefenderByPid } from "../../../lib/api";
 
@@ -21,10 +22,20 @@ export default async function DefenderProfilePage({
 }) {
   const { pid } = await params;
 
-  const fromApi = await fetchDefenderByPid(pid);
-  const mock = getDefenderByPid(pid);
-  const defender = fromApi ?? (mock ? { ...mock, bio: mock.excerpt, candleCount: 0 } : null);
-  if (!defender) notFound();
+  const result = await fetchDefenderByPid(pid);
+  // 404 — сторінки немає; недоступність бази не маскуємо демо-даними
+  if (!result.ok) {
+    if (result.reason === "not_found") notFound();
+    return (
+      <div className="mx-auto max-w-6xl px-6 pt-36">
+        <DataUnavailable
+          title="Сторінку пам’яті не вдалося завантажити"
+          hint="Дані цієї людини зберігаються в реєстрі — зараз він тимчасово недоступний. Спробуйте оновити сторінку."
+        />
+      </div>
+    );
+  }
+  const defender = result.data;
 
   const portrait = portraitFor(defender.pid);
 

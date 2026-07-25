@@ -12,37 +12,27 @@ import { StoryCarousel } from "../components/StoryCarousel";
 import { MEDIA } from "../lib/media";
 import { Reveal } from "../components/Reveal";
 import { ButtonLink } from "../components/ui/Button";
-import { MOCK_DEFENDERS } from "../lib/mock-data";
-import { fetchDefenders } from "../lib/api";
+import { fetchDefenders, fetchStats } from "../lib/api";
+import { DataUnavailable } from "../components/DataUnavailable";
 import type { DefenderSummary } from "../lib/types";
 
 export const revalidate = 30;
 
-interface Stats {
-  total: number;
-  verified: number;
-  pending: number;
-  places: number;
-  units: number;
-}
-
-async function fetchStats(): Promise<Stats | null> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api/v1";
-  try {
-    const res = await fetch(`${apiUrl}/stats`, { next: { revalidate: 60 } });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
-
 export default async function HomePage() {
-  const [fromApi, stats] = await Promise.all([fetchDefenders(), fetchStats()]);
-  const latest = fromApi.length > 0 ? fromApi : MOCK_DEFENDERS;
+  const [defendersResult, statsResult] = await Promise.all([fetchDefenders(), fetchStats()]);
+  const latest = defendersResult.ok ? defendersResult.data : [];
+  const stats = statsResult.ok ? statsResult.data : null;
   const featured: DefenderSummary | undefined = latest[0];
   const second: DefenderSummary | undefined = latest[1];
-  if (!featured) return null;
+
+  // Реєстр недоступний — кажемо про це прямо, а не показуємо демо-імена
+  if (!defendersResult.ok) {
+    return (
+      <div className="mx-auto max-w-6xl px-6 pt-40">
+        <DataUnavailable />
+      </div>
+    );
+  }
 
   return (
     <>
@@ -113,7 +103,7 @@ export default async function HomePage() {
         title="Історії, які зберігають родини"
         lead="Кожну сторінку тут створюють рідні й побратими. Це їхні слова та їхня пам’ять."
       />
-      <CinematicStory defender={featured} />
+      {featured && <CinematicStory defender={featured} />}
       {second && <CinematicStory defender={second} flip />}
 
       {/* ЗАЛ III · Стіна пам’яті */}

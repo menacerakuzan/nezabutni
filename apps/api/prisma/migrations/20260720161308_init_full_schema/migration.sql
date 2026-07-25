@@ -2,7 +2,6 @@
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 
 -- CreateExtension
-CREATE EXTENSION IF NOT EXISTS "vector";
 
 -- CreateExtension
 CREATE EXTENSION IF NOT EXISTS "postgis";
@@ -436,35 +435,6 @@ CREATE TABLE "content_revision" (
 );
 
 -- CreateTable
-CREATE TABLE "embedding" (
-    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
-    "entity_type" VARCHAR(30) NOT NULL,
-    "entity_id" UUID NOT NULL,
-    "model_name" VARCHAR(100) NOT NULL,
-    "vector" vector(1536) NOT NULL,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "embedding_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "ai_task" (
-    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
-    "task_type" VARCHAR(50) NOT NULL,
-    "entity_type" VARCHAR(30),
-    "entity_id" UUID,
-    "status" VARCHAR(30) NOT NULL DEFAULT 'queued',
-    "result" JSONB,
-    "confidence" DECIMAL(4,3),
-    "requires_human_review" BOOLEAN NOT NULL DEFAULT true,
-    "reviewed_by" UUID,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "completed_at" TIMESTAMP(3),
-
-    CONSTRAINT "ai_task_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "audit_log" (
     "id" BIGSERIAL NOT NULL,
     "actor_id" UUID,
@@ -595,13 +565,10 @@ CREATE INDEX "defender_submission_submitted_by_idx" ON "defender_submission"("su
 CREATE INDEX "content_revision_entity_type_entity_id_created_at_idx" ON "content_revision"("entity_type", "entity_id", "created_at");
 
 -- CreateIndex
-CREATE INDEX "embedding_entity_type_entity_id_idx" ON "embedding"("entity_type", "entity_id");
 
 -- CreateIndex
-CREATE INDEX "ai_task_status_idx" ON "ai_task"("status");
 
 -- CreateIndex
-CREATE INDEX "ai_task_task_type_idx" ON "ai_task"("task_type");
 
 -- CreateIndex
 CREATE INDEX "audit_log_entity_type_entity_id_idx" ON "audit_log"("entity_type", "entity_id");
@@ -775,7 +742,6 @@ ALTER TABLE "defender_submission" ADD CONSTRAINT "defender_submission_assigned_v
 ALTER TABLE "content_revision" ADD CONSTRAINT "content_revision_editor_id_fkey" FOREIGN KEY ("editor_id") REFERENCES "app_user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ai_task" ADD CONSTRAINT "ai_task_reviewed_by_fkey" FOREIGN KEY ("reviewed_by") REFERENCES "app_user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "audit_log" ADD CONSTRAINT "audit_log_actor_id_fkey" FOREIGN KEY ("actor_id") REFERENCES "app_user"("id") ON DELETE SET NULL ON UPDATE CASCADE;

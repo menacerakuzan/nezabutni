@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Тести — юніт-рівня з підміненим Prisma, тож жива база тут не потрібна.
+# Перевірку міграцій варто винести в окремий job з образом, де є і PostGIS,
+# і pgvector (стандартного такого немає — знадобиться власний Dockerfile).
+
+jobs:
+  api:
+    name: API — типи, тести, збірка
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://user:pass@localhost:5432/db?schema=public
+      JWT_SECRET: ci-only-secret-at-least-32-characters-long
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prisma Client
+        run: npx prisma generate
+        working-directory: apps/api
+      - name: Перевірка типів
+        run: npx tsc --noEmit
+        working-directory: apps/api
+      - name: Тести
+        run: npm test
+        working-directory: apps/api
+      - name: Збірка
+        run: npm run build
+        working-directory: apps/api
+
+  web:
+    name: Фронтенд — типи і збірка
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prisma Client (спільні типи монорепо)
+        run: npx prisma generate
+        working-directory: apps/api
+      - name: Перевірка типів
+        run: npx tsc --noEmit
+        working-directory: apps/web
+      - name: Збірка
+        run: npx next build
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_API_URL: https://example.invalid/api/v1

@@ -2,8 +2,13 @@ import Link from "next/link";
 import { AuthStatus } from "./AuthStatus";
 import { LogoMark } from "./LogoMark";
 import { ButtonLink } from "./ui/Button";
+import { fetchMenu } from "../lib/api";
 
-const NAV = [
+/**
+ * Резервна навігація: якщо CMS недоступна, користувач усе одно має
+ * дістатися до розділів. Основне джерело — таблиця menu_item.
+ */
+const NAV_FALLBACK = [
   { href: "/defenders", label: "Реєстр" },
   { href: "/map", label: "Карта" },
   { href: "/museum", label: "Музей" },
@@ -11,7 +16,10 @@ const NAV = [
   { href: "/about", label: "Про нас" },
 ];
 
-export function Header() {
+export async function Header() {
+  const menu = await fetchMenu();
+  const NAV = menu.ok && menu.data.header?.length ? menu.data.header : NAV_FALLBACK;
+
   return (
     <header className="fixed inset-x-0 top-0 z-50">
       {/* легке затемнення зверху для читабельності поверх медіа */}
