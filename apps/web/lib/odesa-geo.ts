@@ -10,6 +10,26 @@ export const FIELD_CY = 0.5;
 
 export type Ring = ReadonlyArray<readonly [number, number]>;
 
+/**
+ * Проєкція, якою побудовано весь контур і міста нижче (еквідистантна,
+ * корекція довготи за косинусом середньої широти, нормалізація 0..1
+ * за bbox повного — не спрощеного — контуру області). Використовується
+ * і для генерації статичної геометрії, і тут — щоб на льоту перевести
+ * реальні lon/lat захисника (з API) у ті самі координати поля.
+ */
+const PROJ = {
+  lon0: 28.2117366,
+  lat1: 48.2339336,
+  kx: Math.cos((46.64702 * Math.PI) / 180),
+  scale: 0.3150770049775551,
+};
+
+export function lonLatToField(lon: number, lat: number): [number, number] {
+  const x = (lon - PROJ.lon0) * PROJ.kx * PROJ.scale;
+  const y = (PROJ.lat1 - lat) * PROJ.scale;
+  return [x, y];
+}
+
 /** Зовнішній контур області — 557 точок. */
 export const OUTLINE: Ring = [
   [0.6362,0.5735],

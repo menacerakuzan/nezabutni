@@ -1,9 +1,16 @@
 import Link from "next/link";
 import { LogoMark } from "./LogoMark";
+import { fetchMenu } from "../lib/api";
 
-const COLUMNS = [
+/**
+ * Резервні колонки — лише якщо CMS недоступна. Основне джерело: таблиця
+ * menu_item, локації footer_memorial / footer_platform / footer_join
+ * (редагується в /admin/menu, як і хедер).
+ */
+const COLUMNS_FALLBACK: { title: string; location: string; links: { href: string; label: string }[] }[] = [
   {
     title: "Меморіал",
+    location: "footer_memorial",
     links: [
       { href: "/defenders", label: "Реєстр імен" },
       { href: "/map", label: "Карта пам’яті" },
@@ -13,6 +20,7 @@ const COLUMNS = [
   },
   {
     title: "Платформа",
+    location: "footer_platform",
     links: [
       { href: "/about", label: "Про проєкт" },
       { href: "/partners", label: "Партнери" },
@@ -22,6 +30,7 @@ const COLUMNS = [
   },
   {
     title: "Долучитися",
+    location: "footer_join",
     links: [
       { href: "/submissions/new", label: "Подати ім’я" },
       { href: "/donate", label: "Підтримати" },
@@ -30,7 +39,14 @@ const COLUMNS = [
   },
 ];
 
-export function Footer() {
+export async function Footer() {
+  const menu = await fetchMenu();
+
+  const columns = COLUMNS_FALLBACK.map((col) => ({
+    title: col.title,
+    links: menu.ok && menu.data[col.location]?.length ? menu.data[col.location]! : col.links,
+  }));
+
   return (
     <footer className="relative border-t border-hair bg-navy-950">
       <div className="mx-auto max-w-6xl px-6 pb-12 pt-20">
@@ -49,7 +65,7 @@ export function Footer() {
               Цифровий меморіал і музей пам’яті захисників регіону.
             </p>
           </div>
-          {COLUMNS.map((col) => (
+          {columns.map((col) => (
             <nav key={col.title} aria-label={col.title}>
               <h3 className="text-[11px] uppercase text-ink-faint">{col.title}</h3>
               <ul className="mt-4 space-y-2.5">

@@ -13,4 +13,7 @@ export interface DefenderSummary {
   portraitUrl: string | null;
   excerpt: string;
   verificationStatus: VerificationStatus;
+  /** Реальні координати з API (перше повʼязане місце), або null. */
+  lon: number | null;
+  lat: number | null;
 }

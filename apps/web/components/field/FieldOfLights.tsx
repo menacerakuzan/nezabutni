@@ -2,13 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { generateDemoLights, type DemoLight } from "../../lib/demo-names";
-import { OUTLINE, RAIONS, CITIES, FIELD_CX, FIELD_CY, type Ring } from "../../lib/odesa-geo";
+import { OUTLINE, RAIONS, CITIES, FIELD_CX, FIELD_CY, lonLatToField, type Ring } from "../../lib/odesa-geo";
 
 /**
  * Поле вогнів над Одеською областю. Справжня географія: контур області
  * (geoBoundaries), райони й громади — чинний поділ після реформи 2020
- * (OpenStreetMap, українські назви). Вогник за кожним ім’ям.
+ * (OpenStreetMap, українські назви). Вогник за кожним ім’ям — і лише
+ * за реальним ім’ям з реєстру: жодних демонстраційних вогнів. Поки
+ * реєстр малий, поле малолюдне — це чесний стан проєкту, а не бага.
+ *
+ * Позиція вогника:
+ *  1. реальні координати з API (місце поховання/загибелі/служби), якщо
+ *     захисника вже привʼязано до точки на карті;
+ *  2. інакше — місто/район із назви регіону захисника, з детермінованим
+ *     (за pid) розкидом, щоб кілька імен з одного міста не стояли пліч-о-пліч;
+ *  3. інакше — обласний центр із тим самим розкидом.
  *
  * Рішення щодо продуктивності:
  *  · сяйво вогнів — один пре-рендерений спрайт (drawImage), не градієнти;
@@ -29,19 +37,39 @@ export interface RealLight {
   name: string;
   years: string;
   region: string | null;
+  lon: number | null;
+  lat: number | null;
 }
 
 interface Light {
   id: string;
-  pid?: string;
+  pid: string;
   name: string;
   years: string;
   cluster: string;
   x: number;
   y: number;
-  demo: boolean;
   phase: number;
   size: number;
+}
+
+/** Українське число + правильна форма слова (1 вогник, 2 вогники, 5 вогників). */
+function pluralize(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+}
+
+/** Стабільний хеш рядка 0..1 — для детермінованого (не випадкового щоразу) розкиду. */
+function hash01(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return ((h >>> 0) % 100000) / 100000;
 }
 
 interface Cam {
@@ -144,25 +172,44 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
   );
 
   const lights = useMemo<Light[]>(() => {
-    const demo = generateDemoLights(420).map((d: DemoLight, i: number) => ({
-      ...d,
-      phase: (i * 137.5) % (Math.PI * 2),
-      size: 1,
-    }));
     const odesa = CITIES[0]!;
-    const reals = real.map((r, i) => ({
-      id: `real-${r.pid}`,
-      pid: r.pid,
-      name: r.name,
-      years: r.years,
-      cluster: r.region ?? odesa.name,
-      x: odesa.x + Math.cos(i * 2.1 + 0.7) * 0.028 * (1 + (i % 3) * 0.5),
-      y: odesa.y + Math.sin(i * 2.7 + 0.4) * 0.024 * (1 + (i % 2) * 0.6),
-      demo: false,
-      phase: i * 1.7,
-      size: 1.7,
-    }));
-    return [...demo, ...reals];
+    return real.map((r) => {
+      const h1 = hash01(r.pid);
+      const h2 = hash01(r.pid + ":y");
+      const angle = h1 * Math.PI * 2;
+
+      let baseX: number;
+      let baseY: number;
+      let spread: number;
+
+      if (r.lon !== null && r.lat !== null) {
+        // Реальна точка з API — розкид лише мікроскопічний, щоб не злипався
+        // рівно один-в-один із сусіднім вогником на тому самому місці.
+        [baseX, baseY] = lonLatToField(r.lon, r.lat);
+        spread = 0.004;
+      } else {
+        // Немає точної точки — шукаємо місто/район за назвою регіону.
+        const norm = (s: string) => s.toLowerCase().replace(/[’'‘`]/g, "");
+        const regionNorm = r.region ? norm(r.region) : "";
+        const city =
+          (regionNorm && CITIES.find((c) => regionNorm.includes(norm(c.name)))) || odesa;
+        baseX = city.x;
+        baseY = city.y;
+        spread = city === odesa ? 0.05 : 0.03;
+      }
+
+      return {
+        id: `real-${r.pid}`,
+        pid: r.pid,
+        name: r.name,
+        years: r.years,
+        cluster: r.region ?? odesa.name,
+        x: baseX + Math.cos(angle) * spread * (0.3 + h2 * 0.7),
+        y: baseY + Math.sin(angle) * spread * (0.3 + h2 * 0.7) * 0.85,
+        phase: h1 * Math.PI * 2,
+        size: 1.7,
+      };
+    });
   }, [real]);
 
   const total = lights.length;
@@ -498,7 +545,7 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
         // а не перетворюються на прожектори.
         const zScale = 1.1 + Math.min(cam.z, 5.5) * 0.42;
         const base = zScale * l.size * breath * (isHover || isSel ? 1.9 : 1);
-        const alpha = dimmed ? 0.08 : (l.demo ? 0.72 : 0.95) * flicker;
+        const alpha = dimmed ? 0.08 : 0.95 * flicker;
         const sprite = matches || isHover || isSel ? spriteWarm : spriteBase;
         const R = base * 5;
 
@@ -521,8 +568,8 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
               y: p.y + 4,
               font: `${isHover || isSel ? 600 : 500} ${isHover || isSel ? 13 : 12}px var(--font-odesa), sans-serif`,
               color: `rgba(251,243,233,${nameAlpha})`,
-              // наведене/обране → збіги пошуку → реальні записи → демо
-              prio: isHover || isSel ? 0 : matches ? 3 : l.demo ? 7 : 6,
+              // наведене/обране → збіги пошуку → решта
+              prio: isHover || isSel ? 0 : matches ? 3 : 6,
             });
           }
         }
@@ -705,8 +752,18 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
           Кожен вогник — <span className="text-gold">людина</span>.
         </h1>
         <p className="mt-4 text-sm leading-relaxed text-ink md:text-base">
-          {total} вогнів пам’яті на мапі області. Наблизьтеся — вогні стануть іменами. Торкніться
-          вогника — увійдіть до історії.
+          {total > 0 ? (
+            <>
+              {total} {pluralize(total, "вогник", "вогники", "вогників")} пам’яті на мапі
+              області. Наблизьтеся — вогні стануть іменами. Торкніться вогника — увійдіть до
+              історії.
+            </>
+          ) : (
+            <>
+              Поле ще порожнє — тут з’являться імена, щойно родини подадуть перші історії, а
+              модератори їх підтвердять.
+            </>
+          )}
         </p>
       </div>
 
@@ -783,26 +840,19 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
           >
             ✕
           </button>
-          <span className="caption">{selected.demo ? "Вогник пам’яті" : "Сторінка пам’яті"}</span>
+          <span className="caption">Сторінка пам’яті</span>
           <h2 className="mt-3 font-display text-2xl font-semibold uppercase leading-tight text-cream">
             {selected.name}
           </h2>
           <p className="mt-2 text-sm text-ink">
             {selected.years} · {selected.cluster}
           </p>
-          {selected.demo ? (
-            <p className="mt-4 border-t border-hair pt-4 text-sm text-ink-lo">
-              Історія цього вогника ще збирається. Демонстраційне ім’я — воно показує, яким стане
-              поле, коли родини наповнять реєстр.
-            </p>
-          ) : (
-            <Link
-              href={`/defenders/${selected.pid}`}
-              className="mt-5 inline-flex items-center gap-2 rounded-[3px] bg-cream px-5 py-2.5 text-sm font-medium text-void transition-colors hover:bg-white"
-            >
-              Увійти до історії →
-            </Link>
-          )}
+          <Link
+            href={`/defenders/${selected.pid}`}
+            className="mt-5 inline-flex items-center gap-2 rounded-[3px] bg-cream px-5 py-2.5 text-sm font-medium text-void transition-colors hover:bg-white"
+          >
+            Увійти до історії →
+          </Link>
         </aside>
       )}
 

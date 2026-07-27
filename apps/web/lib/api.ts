@@ -85,6 +85,57 @@ export async function fetchRoutes(): Promise<Result<MemoryRoute[]>> {
   return get<MemoryRoute[]>("/site/routes", 300);
 }
 
+export interface PageBlockDto {
+  id: string;
+  type: string;
+  label: string;
+  props: Record<string, unknown>;
+}
+
+/** Блоки сторінки в порядку показу — керуються з /admin/pages. */
+export async function fetchPageBlocks(page: string): Promise<Result<PageBlockDto[]>> {
+  return get<PageBlockDto[]>(`/site/pages/${encodeURIComponent(page)}/blocks`, 30);
+}
+
+export interface NewsListItem {
+  title: string;
+  slug: string;
+  category: string;
+  excerpt: string | null;
+  publishedAt: string;
+}
+
+export interface NewsDetail extends NewsListItem {
+  body: string;
+  author: { displayName: string } | null;
+}
+
+export async function fetchNews(): Promise<Result<NewsListItem[]>> {
+  return get<NewsListItem[]>("/news", 60);
+}
+
+export async function fetchNewsBySlug(slug: string): Promise<Result<NewsDetail>> {
+  return get<NewsDetail>(`/news/${encodeURIComponent(slug)}`, 60);
+}
+
+export interface SiteSettings {
+  siteName: string;
+  tagline: string;
+  contactEmail: string;
+}
+
+const SETTINGS_DEFAULTS: SiteSettings = {
+  siteName: "Незабутні",
+  tagline: "Цифровий меморіал захисників Одеської області",
+  contactEmail: "hello@nezabutni.ua",
+};
+
+/** Налаштування сайту з БД; якщо API недоступне — ті самі значення, що й дефолт бекенду. */
+export async function fetchSettings(): Promise<SiteSettings> {
+  const r = await get<SiteSettings>("/site/settings", 300);
+  return r.ok ? r.data : SETTINGS_DEFAULTS;
+}
+
 export async function lightCandle(pid: string): Promise<{ candleCount: number } | null> {
   try {
     const res = await fetch(`${API_URL}/defenders/${pid}/candles`, { method: "POST" });

@@ -112,6 +112,7 @@ model AppUser {
   revisions            ContentRevision[]
   auditActions         AuditLog[]
   consents             ConsentRecord[]
+  newsPosts            NewsPost[]
 
   @@index([email])
   @@map("app_user")
@@ -712,4 +713,33 @@ model PageBlock {
 
   @@index([page, sortOrder])
   @@map("page_block")
+}
+
+/// Новини платформи: оголошення, події громад, пам'ятні дати.
+model NewsPost {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title       String    @db.VarChar(200)
+  slug        String    @unique @db.VarChar(220)
+  category    String    @db.VarChar(60)
+  excerpt     String?   @db.VarChar(400)
+  body        String
+  status      String    @default("draft") @db.VarChar(20)
+  authorId    String?   @map("author_id") @db.Uuid
+  author      AppUser?  @relation(fields: [authorId], references: [id])
+  publishedAt DateTime? @map("published_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, publishedAt])
+  @@map("news_post")
+}
+
+/// Ключ-значення для налаштувань сайту, що раніше були зашиті в код
+/// (контактна пошта, назва платформи, соцмережі тощо).
+model SiteSetting {
+  key         String   @id @db.VarChar(80)
+  value       String
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("site_setting")
 }

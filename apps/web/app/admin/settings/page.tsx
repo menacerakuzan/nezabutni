@@ -1,10 +1,71 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { authFetch } from "../../../lib/auth-client";
+
+interface Settings {
+  siteName: string;
+  tagline: string;
+  contactEmail: string;
+}
 
 export default function AdminSettingsPage() {
-  const [siteName, setSiteName] = useState("Незабутні");
-  const [tagline, setTagline] = useState("Цифровий меморіал захисників Одеської області");
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [draft, setDraft] = useState<Settings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await authFetch("/site/settings");
+      if (!res.ok) {
+        setError("Не вдалося завантажити налаштування.");
+        return;
+      }
+      const data = await res.json();
+      setSettings(data);
+      setDraft(data);
+    } catch {
+      setError("Немає зв’язку із сервером.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function save() {
+    if (!draft) return;
+    setSaving(true);
+    setError(null);
+    const res = await authFetch("/admin/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    });
+    setSaving(false);
+    if (res.status === 403) {
+      setError("Зміна налаштувань доступна лише адміністраторам.");
+      return;
+    }
+    if (!res.ok) {
+      setError("Не вдалося зберегти налаштування.");
+      return;
+    }
+    const data = await res.json();
+    setSettings(data);
+    setDraft(data);
+    setSavedAt(Date.now());
+    setTimeout(() => setSavedAt((t) => (t && Date.now() - t >= 1400 ? null : t)), 1500);
+  }
+
+  const dirty = settings && draft && JSON.stringify(settings) !== JSON.stringify(draft);
 
   return (
     <div>
@@ -13,17 +74,55 @@ export default function AdminSettingsPage() {
 
       <section className="mt-6 max-w-2xl space-y-4 border-t border-hair pt-6">
         <h2 className="caption">Загальні</h2>
-        <div>
-          <label className="block text-sm font-semibold text-cream" htmlFor="s-name">Назва платформи</label>
-          <input id="s-name" type="text" value={siteName} onChange={(e) => setSiteName(e.target.value)} className="mt-1 w-full py-2.5 text-cream" />
-        </div>
-        <div>
-          <label className="block text-sm font-semibold text-cream" htmlFor="s-tag">Опис (SEO / OpenGraph)</label>
-          <input id="s-tag" type="text" value={tagline} onChange={(e) => setTagline(e.target.value)} className="mt-1 w-full py-2.5 text-cream" />
-        </div>
-        <button disabled className="cursor-not-allowed rounded-[3px] border border-hair px-4 py-2 text-sm text-ink-faint" title="Збереження в конфіг — наступний етап">
-          Зберегти (етап 2)
-        </button>
+
+        {error && <p className="border-l-2 border-crimson-bright pl-4 text-sm text-ink">{error}</p>}
+
+        {loading ? (
+          <p className="text-sm text-ink-lo">Завантаження…</p>
+        ) : draft ? (
+          <>
+            <div>
+              <label className="block text-sm font-semibold text-cream" htmlFor="s-name">Назва платформи</label>
+              <input
+                id="s-name"
+                type="text"
+                value={draft.siteName}
+                onChange={(e) => setDraft({ ...draft, siteName: e.target.value })}
+                className="mt-1 w-full py-2.5 text-cream"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-cream" htmlFor="s-tag">Опис (SEO / OpenGraph)</label>
+              <input
+                id="s-tag"
+                type="text"
+                value={draft.tagline}
+                onChange={(e) => setDraft({ ...draft, tagline: e.target.value })}
+                className="mt-1 w-full py-2.5 text-cream"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-cream" htmlFor="s-email">Контактна пошта</label>
+              <input
+                id="s-email"
+                type="email"
+                value={draft.contactEmail}
+                onChange={(e) => setDraft({ ...draft, contactEmail: e.target.value })}
+                className="mt-1 w-full py-2.5 text-cream"
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={save}
+                disabled={!dirty || saving}
+                className="rounded-[3px] bg-cream px-4 py-2 text-sm font-semibold text-void hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {saving ? "Зберігаємо…" : "Зберегти"}
+              </button>
+              {savedAt && <span className="text-xs text-good">Збережено ✓</span>}
+            </div>
+          </>
+        ) : null}
       </section>
 
       <section className="mt-8 max-w-2xl border-t border-hair pt-6">

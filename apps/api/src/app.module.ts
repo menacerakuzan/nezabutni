@@ -10,6 +10,10 @@ import { ModerationModule } from "./moderation/moderation.module";
 import { SubmissionsModule } from "./submissions/submissions.module";
 import { MediaModule } from "./media/media.module";
 import { SiteModule } from "./site/site.module";
+import { AuditModule } from "./audit/audit.module";
+import { UsersModule } from "./users/users.module";
+import { NewsModule } from "./news/news.module";
+import { SettingsModule } from "./settings/settings.module";
 
 @Module({
   imports: [
@@ -25,6 +29,10 @@ import { SiteModule } from "./site/site.module";
     SubmissionsModule,
     MediaModule,
     SiteModule,
+    AuditModule,
+    UsersModule,
+    NewsModule,
+    SettingsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

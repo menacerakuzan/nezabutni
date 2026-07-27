@@ -15,4 +15,9 @@ export class UpdateMenuItemDto {
   @MaxLength(120)
   @IsOptional()
   label?: string;
+
+  @IsString()
+  @MaxLength(255)
+  @IsOptional()
+  href?: string;
 }

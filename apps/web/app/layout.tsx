@@ -3,13 +3,16 @@ import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
 import { AccessibilityMenu } from "../components/a11y/AccessibilityMenu";
 import { AuthProvider } from "../components/AuthProvider";
+import { fetchSettings } from "../lib/api";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: "Незабутні — цифровий меморіал захисників",
-  description:
-    "Цифровий меморіал і музей пам’яті захисників регіону: реєстр імен, карта пам’яті, архів і онлайн-експозиції.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const settings = await fetchSettings();
+  return {
+    title: `${settings.siteName} — цифровий меморіал захисників`,
+    description: settings.tagline,
+  };
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

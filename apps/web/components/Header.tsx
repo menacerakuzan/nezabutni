@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AuthStatus } from "./AuthStatus";
 import { LogoMark } from "./LogoMark";
 import { ButtonLink } from "./ui/Button";
-import { fetchMenu } from "../lib/api";
+import { fetchMenu, fetchSettings } from "../lib/api";
 
 /**
  * Резервна навігація: якщо CMS недоступна, користувач усе одно має
@@ -17,7 +17,7 @@ const NAV_FALLBACK = [
 ];
 
 export async function Header() {
-  const menu = await fetchMenu();
+  const [menu, settings] = await Promise.all([fetchMenu(), fetchSettings()]);
   const NAV = menu.ok && menu.data.header?.length ? menu.data.header : NAV_FALLBACK;
 
   return (
@@ -28,7 +28,7 @@ export async function Header() {
         <Link href="/" className="flex items-center gap-2.5">
           <LogoMark className="h-6 w-auto text-gold" />
           <span className="font-display text-base font-semibold tracking-wide text-cream">
-            Незабутні
+            {settings.siteName}
           </span>
         </Link>
 

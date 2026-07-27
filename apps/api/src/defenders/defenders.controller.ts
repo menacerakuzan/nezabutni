@@ -1,6 +1,8 @@
-import { Body, Controller, Get, Post, Param, Query, Headers, Ip, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Post, Param, Query, Headers, Ip, UseGuards } from "@nestjs/common";
 import { DefendersService } from "./defenders.service";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { RolesGuard } from "../auth/roles.guard";
+import { Roles } from "../auth/roles.decorator";
 import { CurrentUser, CurrentUserPayload } from "../auth/current-user.decorator";
 
 @Controller("defenders")
@@ -34,6 +36,14 @@ export class DefendersController {
   @Get(":pid/memories")
   listMemories(@Param("pid") pid: string, @Query("limit") limit = "20") {
     return this.defenders.listMemories(pid, Number(limit) || 20);
+  }
+
+  // DELETE /defenders/{pid} — адмінське видалення з каскадом дочірніх записів
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("admin", "superadmin")
+  @Delete(":pid")
+  remove(@Param("pid") pid: string, @CurrentUser() user: CurrentUserPayload) {
+    return this.defenders.remove(pid, user.userId);
   }
 
   // POST /defenders/{pid}/memories — новий спогад, потребує модерації

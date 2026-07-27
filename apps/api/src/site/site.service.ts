@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
+import { AuditService } from "../audit/audit.service";
 
 /**
  * Публічна структура сайту: навігація, блоки сторінок, маршрути пам'яті.
@@ -8,7 +9,10 @@ import { PrismaService } from "../prisma.service";
  */
 @Injectable()
 export class SiteService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+  ) {}
 
   /** Меню згруповане за місцем розташування (хедер, колонки футера). */
   async menu() {
@@ -89,9 +93,43 @@ export class SiteService {
     });
   }
 
-  async updateMenuItem(id: string, data: { visible?: boolean; sortOrder?: number; label?: string }) {
+  async updateMenuItem(
+    id: string,
+    data: { visible?: boolean; sortOrder?: number; label?: string; href?: string },
+    actorId: string,
+  ) {
     try {
-      return await this.prisma.menuItem.update({ where: { id }, data });
+      const item = await this.prisma.menuItem.update({ where: { id }, data });
+      await this.audit.log({ actorId, action: "menu.update", entityType: "menu_item", entityId: id, diff: data });
+      return item;
+    } catch (err) {
+      throw this.notFoundIfMissing(err, "Пункт меню не знайдено.");
+    }
+  }
+
+  async createMenuItem(data: { label: string; href: string; location: string }, actorId: string) {
+    const maxOrder = await this.prisma.menuItem.aggregate({
+      where: { location: data.location },
+      _max: { sortOrder: true },
+    });
+    const item = await this.prisma.menuItem.create({
+      data: { ...data, sortOrder: (maxOrder._max.sortOrder ?? -1) + 1 },
+    });
+    await this.audit.log({ actorId, action: "menu.create", entityType: "menu_item", entityId: item.id, diff: data });
+    return item;
+  }
+
+  async deleteMenuItem(id: string, actorId: string) {
+    try {
+      const item = await this.prisma.menuItem.delete({ where: { id } });
+      await this.audit.log({
+        actorId,
+        action: "menu.delete",
+        entityType: "menu_item",
+        entityId: id,
+        diff: { label: item.label, href: item.href },
+      });
+      return { ok: true };
     } catch (err) {
       throw this.notFoundIfMissing(err, "Пункт меню не знайдено.");
     }
@@ -101,9 +139,11 @@ export class SiteService {
     return this.prisma.pageBlock.findMany({ where: { page }, orderBy: { sortOrder: "asc" } });
   }
 
-  async updatePageBlock(id: string, data: { visible?: boolean; sortOrder?: number }) {
+  async updatePageBlock(id: string, data: { visible?: boolean; sortOrder?: number }, actorId: string) {
     try {
-      return await this.prisma.pageBlock.update({ where: { id }, data });
+      const block = await this.prisma.pageBlock.update({ where: { id }, data });
+      await this.audit.log({ actorId, action: "block.update", entityType: "page_block", entityId: id, diff: data });
+      return block;
     } catch (err) {
       throw this.notFoundIfMissing(err, "Блок сторінки не знайдено.");
     }

@@ -22,22 +22,22 @@ const SECTIONS: { title: string; items: { href: string; label: string; live?: bo
       { href: "/admin/moderation", label: "Модерація", live: true },
       { href: "/admin/places", label: "Місця на карті", live: true },
       { href: "/admin/media", label: "Медіатека", live: true },
-      { href: "/admin/news", label: "Новини" },
+      { href: "/admin/news", label: "Новини", live: true },
     ],
   },
   {
     title: "Сайт",
     items: [
       { href: "/admin/pages", label: "Сторінки", live: true },
-      { href: "/admin/menu", label: "Меню" },
+      { href: "/admin/menu", label: "Меню", live: true },
     ],
   },
   {
     title: "Система",
     items: [
-      { href: "/admin/users", label: "Користувачі" },
-      { href: "/admin/settings", label: "Налаштування" },
-      { href: "/admin/audit", label: "Журнал змін" },
+      { href: "/admin/users", label: "Користувачі", live: true },
+      { href: "/admin/settings", label: "Налаштування", live: true },
+      { href: "/admin/audit", label: "Журнал змін", live: true },
     ],
   },
 ];
