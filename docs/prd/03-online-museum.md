@@ -67,7 +67,7 @@
 ## 5. Дані і API (посилання)
 
 - Схема: `exhibit`, `exhibit_defender`, `collection`, `collection_media`, `story`, `story_defender`, `partner`.
-- Ендпоінти: `GET /exhibits`, `GET /exhibits/{slug}`, `GET /stories`, `GET /media/{id}/manifest` (IIIF, спільно з Archive).
+- Ендпоінти: `GET /exhibits`, `GET /exhibits/{slug}`, `GET /stories`, `GET /archive/{id}/manifest` (IIIF, спільно з Archive).
 
 ## 6. Метрики успіху
 

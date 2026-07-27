@@ -48,9 +48,37 @@ export const config = {
         : ["http://localhost:3000", "http://localhost:3211", "http://127.0.0.1:3211"],
   },
   uploads: {
-    /** Локальна тека або S3 — визначається наявністю S3_BUCKET. */
-    dir: process.env.UPLOAD_DIR ?? "uploads",
+    /**
+     * "local" — диск (для проду потрібен постійний том, інакше файли
+     * зникають при редеплої); "s3" — об'єктне сховище (AWS S3 / Cloudflare
+     * R2 / MinIO). Перемикається змінною UPLOAD_DRIVER, без правок коду.
+     */
+    driver: (process.env.UPLOAD_DRIVER === "s3" ? "s3" : "local") as "local" | "s3",
+    localDir: process.env.UPLOAD_DIR ?? "uploads",
     maxBytes: Number(process.env.UPLOAD_MAX_BYTES ?? 15 * 1024 * 1024),
     publicBaseUrl: process.env.UPLOAD_PUBLIC_BASE_URL ?? "/api/v1/media/file",
+    s3:
+      process.env.S3_BUCKET &&
+      process.env.S3_ACCESS_KEY_ID &&
+      process.env.S3_SECRET_ACCESS_KEY
+        ? {
+            bucket: process.env.S3_BUCKET,
+            region: process.env.S3_REGION ?? "auto",
+            endpoint: process.env.S3_ENDPOINT,
+            accessKeyId: process.env.S3_ACCESS_KEY_ID,
+            secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+            forcePathStyle: process.env.S3_FORCE_PATH_STYLE === "true",
+          }
+        : undefined,
   },
 } as const;
+
+if (isProd && config.uploads.driver === "local") {
+  // Не фатально — власник сервісу міг свідомо підключити постійний том
+  // до UPLOAD_DIR (наприклад Railway Volume). Але це варто помітити в логах,
+  // бо найчастіша причина "файли зникли після деплою" — саме забутий том.
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[config] UPLOAD_DRIVER=local у production: переконайтесь, що UPLOAD_DIR змонтовано як постійний том."
+  );
+}

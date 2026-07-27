@@ -1,4 +1,5 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 
 /**
@@ -89,7 +90,11 @@ export class SiteService {
   }
 
   async updateMenuItem(id: string, data: { visible?: boolean; sortOrder?: number; label?: string }) {
-    return this.prisma.menuItem.update({ where: { id }, data });
+    try {
+      return await this.prisma.menuItem.update({ where: { id }, data });
+    } catch (err) {
+      throw this.notFoundIfMissing(err, "Пункт меню не знайдено.");
+    }
   }
 
   async listPageBlocksAdmin(page: string) {
@@ -97,16 +102,32 @@ export class SiteService {
   }
 
   async updatePageBlock(id: string, data: { visible?: boolean; sortOrder?: number }) {
-    return this.prisma.pageBlock.update({ where: { id }, data });
+    try {
+      return await this.prisma.pageBlock.update({ where: { id }, data });
+    } catch (err) {
+      throw this.notFoundIfMissing(err, "Блок сторінки не знайдено.");
+    }
   }
 
-  /** Перестановка блоків одним запитом — атомарно. */
+  /** Перестановка блоків одним запитом — атомарно: або всі, або жоден. */
   async reorderPageBlocks(ids: string[]) {
-    await this.prisma.$transaction(
-      ids.map((id, index) =>
-        this.prisma.pageBlock.update({ where: { id }, data: { sortOrder: index } })
-      )
-    );
+    try {
+      await this.prisma.$transaction(
+        ids.map((id, index) =>
+          this.prisma.pageBlock.update({ where: { id }, data: { sortOrder: index } })
+        )
+      );
+    } catch (err) {
+      throw this.notFoundIfMissing(err, "Один із блоків не знайдено — порядок не змінено.");
+    }
     return { ok: true, count: ids.length };
+  }
+
+  /** Prisma P2025 ("запис не знайдено") → зрозуміла 404 замість голої 500-ї. */
+  private notFoundIfMissing(err: unknown, message: string) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      return new NotFoundException({ code: "not_found", message });
+    }
+    return err;
   }
 }

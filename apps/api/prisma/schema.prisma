@@ -361,7 +361,7 @@ model MediaAsset {
   title              String?       @db.VarChar(500)
   description        String?
   masterUri          String        @map("master_uri") @db.VarChar(1000)
-  storageChecksum    String        @map("storage_checksum") @db.VarChar(128)
+  storageChecksum    String        @unique @map("storage_checksum") @db.VarChar(128)
   mimeType           String?       @map("mime_type") @db.VarChar(120)
   fileSizeBytes      BigInt?       @map("file_size_bytes")
   width              Int?

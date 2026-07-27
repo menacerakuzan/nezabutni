@@ -333,7 +333,7 @@ paths:
                         type: array
                         items: { $ref: '#/components/schemas/MediaAssetSummary' }
 
-  /media/{id}:
+  /archive/{id}:
     parameters:
       - name: id
         in: path
@@ -349,7 +349,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/MediaAsset' }
 
-  /media/{id}/manifest:
+  /archive/{id}/manifest:
     parameters:
       - name: id
         in: path

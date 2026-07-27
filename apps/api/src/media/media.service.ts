@@ -1,14 +1,17 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { createHash } from "node:crypto";
-import { mkdir, writeFile, readFile } from "node:fs/promises";
-import { join, extname } from "node:path";
+import { Prisma, type ContentStatus, type MediaKind } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { config } from "../config";
-import type { MediaKind } from "@prisma/client";
+import { MEDIA_STORAGE } from "./media.constants";
+import type { StorageProvider } from "./storage/storage.interface";
+import { StorageFileNotFoundError } from "./storage/storage.interface";
 
 /**
  * Приймання файлів від родин: перевірка справжнього типу, дедуплікація
- * за контрольною сумою, запис у MediaAsset.
+ * за контрольною сумою, запис у MediaAsset. Байти зберігаються через
+ * StorageProvider (диск або S3-сумісне сховище) — сервіс не знає, куди
+ * саме вони фізично йдуть.
  *
  * Важливо: тип визначаємо за сигнатурою (magic bytes), а не за заголовком
  * Content-Type чи розширенням — їх підробити тривіально. Файл з .jpg у назві
@@ -34,14 +37,14 @@ const SIGNATURES: Signature[] = [
     mime: "image/png",
     kind: "photo",
     ext: ".png",
-    match: (b) =>
-      b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47,
+    match: (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47,
   },
   {
     mime: "image/webp",
     kind: "photo",
     ext: ".webp",
-    match: (b) => b.subarray(0, 4).toString("ascii") === "RIFF" && b.subarray(8, 12).toString("ascii") === "WEBP",
+    match: (b) =>
+      b.subarray(0, 4).toString("ascii") === "RIFF" && b.subarray(8, 12).toString("ascii") === "WEBP",
   },
   {
     mime: "application/pdf",
@@ -71,17 +74,27 @@ export interface UploadedFile {
   buffer: Buffer;
 }
 
+export interface AdminMediaQuery {
+  kind?: MediaKind;
+  status?: ContentStatus;
+  q?: string;
+  page?: number;
+  pageSize?: number;
+}
+
 @Injectable()
 export class MediaService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Inject(MEDIA_STORAGE) private readonly storage: StorageProvider
+  ) {}
 
   private detect(buffer: Buffer): Signature {
     const sig = SIGNATURES.find((s) => s.match(buffer));
     if (!sig) {
       throw new BadRequestException({
         code: "unsupported_media_type",
-        message:
-          "Формат файлу не підтримується. Приймаємо JPEG, PNG, WebP, PDF, MP4 та MP3.",
+        message: "Формат файлу не підтримується. Приймаємо JPEG, PNG, WebP, PDF, MP4 та MP3.",
       });
     }
     return sig;
@@ -110,40 +123,50 @@ export class MediaService {
       return this.toDto(existing, true);
     }
 
-    // Ім'я на диску — від контрольної суми: неможливо підмінити шляхом
+    // Ключ у сховищі — від контрольної суми: неможливо підмінити шляхом
     // (path traversal через оригінальну назву виключено)
-    const filename = `${checksum}${sig.ext}`;
-    const dir = join(process.cwd(), config.uploads.dir);
-    await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, filename), file.buffer);
+    const key = `${checksum}${sig.ext}`;
+    await this.storage.put(key, file.buffer, sig.mime);
 
-    const asset = await this.prisma.mediaAsset.create({
-      data: {
-        kind: sig.kind,
-        title: title?.slice(0, 500) ?? file.originalname.slice(0, 500),
-        masterUri: filename,
-        storageChecksum: checksum,
-        mimeType: sig.mime,
-        fileSizeBytes: BigInt(file.size),
-        rightsStatement: "Надано родиною для публікації в меморіалі",
-        uploadedBy: userId,
-        status: "draft", // публікується лише після модерації
-      },
-    });
-
-    return this.toDto(asset, false);
+    try {
+      const asset = await this.prisma.mediaAsset.create({
+        data: {
+          kind: sig.kind,
+          title: title?.slice(0, 500) ?? file.originalname.slice(0, 500),
+          masterUri: key,
+          storageChecksum: checksum,
+          mimeType: sig.mime,
+          fileSizeBytes: BigInt(file.size),
+          rightsStatement: "Надано родиною для публікації в меморіалі",
+          uploadedBy: userId,
+          status: "draft", // публікується лише після модерації
+        },
+      });
+      return this.toDto(asset, false);
+    } catch (err) {
+      // Гонитва: два одночасних завантаження того самого файлу.
+      // Унікальний індекс на storageChecksum ловить це на рівні БД —
+      // повертаємо вже створений запис замість падіння з 500.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        const race = await this.prisma.mediaAsset.findFirst({ where: { storageChecksum: checksum } });
+        if (race) return this.toDto(race, true);
+      }
+      throw err;
+    }
   }
 
-  /** Віддача файлу за id (перевіряємо статус — чернетки лише завантажувачу). */
+  /** Віддача файлу за id. */
   async getFile(id: string) {
     const asset = await this.prisma.mediaAsset.findUnique({ where: { id } });
     if (!asset) throw new NotFoundException({ code: "not_found" });
-    const path = join(process.cwd(), config.uploads.dir, asset.masterUri);
     try {
-      const buffer = await readFile(path);
+      const buffer = await this.storage.get(asset.masterUri);
       return { buffer, mimeType: asset.mimeType ?? "application/octet-stream" };
-    } catch {
-      throw new NotFoundException({ code: "file_missing" });
+    } catch (err) {
+      if (err instanceof StorageFileNotFoundError) {
+        throw new NotFoundException({ code: "file_missing" });
+      }
+      throw err;
     }
   }
 
@@ -156,15 +179,86 @@ export class MediaService {
     return items.map((a) => this.toDto(a, false));
   }
 
-  private toDto(a: {
-    id: string;
-    kind: MediaKind;
-    title: string | null;
-    mimeType: string | null;
-    fileSizeBytes: bigint | null;
-    status: string;
-    createdAt: Date;
-  }, deduplicated: boolean) {
+  // ── Адмінська медіатека ──
+
+  async adminList(query: AdminMediaQuery) {
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 24));
+
+    const where: Prisma.MediaAssetWhereInput = {
+      ...(query.kind ? { kind: query.kind } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.q
+        ? { title: { contains: query.q, mode: Prisma.QueryMode.insensitive } }
+        : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.mediaAsset.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: { uploadedByUser: { select: { displayName: true, email: true } } },
+      }),
+      this.prisma.mediaAsset.count({ where }),
+    ]);
+
+    return {
+      items: items.map((a) => ({
+        ...this.toDto(a, false),
+        uploadedBy: a.uploadedByUser
+          ? { displayName: a.uploadedByUser.displayName, email: a.uploadedByUser.email }
+          : null,
+      })),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    };
+  }
+
+  async setStatus(id: string, status: ContentStatus) {
+    const asset = await this.prisma.mediaAsset.findUnique({ where: { id } });
+    if (!asset) throw new NotFoundException({ code: "not_found" });
+    const updated = await this.prisma.mediaAsset.update({ where: { id }, data: { status } });
+    return this.toDto(updated, false);
+  }
+
+  async remove(id: string) {
+    const asset = await this.prisma.mediaAsset.findUnique({ where: { id } });
+    if (!asset) throw new NotFoundException({ code: "not_found" });
+
+    try {
+      await this.prisma.mediaAsset.delete({ where: { id } });
+    } catch (err) {
+      // Файл використовується як портрет/обкладинка/джерело тощо —
+      // FK-обмеження (RESTRICT) не дає видалити, поки він десь підключений.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
+        throw new BadRequestException({
+          code: "media_in_use",
+          message: "Файл використовується (портрет, обкладинка чи джерело) — спершу відв’яжіть його.",
+        });
+      }
+      throw err;
+    }
+
+    await this.storage.remove(asset.masterUri);
+    return { ok: true };
+  }
+
+  private toDto(
+    a: {
+      id: string;
+      kind: MediaKind;
+      title: string | null;
+      mimeType: string | null;
+      fileSizeBytes: bigint | null;
+      status: string;
+      createdAt: Date;
+    },
+    deduplicated: boolean
+  ) {
     return {
       id: a.id,
       kind: a.kind,

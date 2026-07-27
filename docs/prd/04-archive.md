@@ -49,7 +49,7 @@ Upload → вірусскан (ClamAV) → витяг EXIF/технічних м
 
 ### 3.4 IIIF-вʼювер
 
-- `GET /media/{id}/manifest` віддає IIIF Presentation Manifest v3.
+- `GET /archive/{id}/manifest` віддає IIIF Presentation Manifest v3.
 - Фронтенд-компонент: `OpenSeadragon`, спільний з модулем Museum (`packages/viewer`).
 - Підтримка анотацій на зображенні (виділення обличчя/підпису/печатки) як IIIF Annotation.
 
@@ -62,7 +62,7 @@ Upload → вірусскан (ClamAV) → витяг EXIF/технічних м
 ### 3.6 Права і ліцензії
 
 - Значення `rights_statement`: `CC0`, `CC-BY`, `CC-BY-SA`, `in-copyright-permission-granted`, `in-copyright-restricted`, `orphan-work` (за моделлю rightsstatements.org, сумісною з Europeana).
-- Публічний API (`GET /archive/search`, `GET /media/{id}`) віддає лише обʼєкти зі статусом `published`; обʼєкти `in-copyright-restricted` доступні тільки автентифікованим дослідникам з обґрунтуванням запиту (адмініструється вручну на MVP).
+- Публічний API (`GET /archive/search`, `GET /archive/{id}`) віддає лише обʼєкти зі статусом `published`; обʼєкти `in-copyright-restricted` доступні тільки автентифікованим дослідникам з обґрунтуванням запиту (адмініструється вручну на MVP).
 - За замовчуванням для нових завантажень від державних партнерів — `CC0`/`CC-BY` (модель Smithsonian Open Access), обмежувальний статус — усвідомлений виняток, не дефолт.
 
 ### 3.7 Пакетне завантаження партнером (Bulk ingest)
@@ -80,7 +80,7 @@ Upload → вірусскан (ClamAV) → витяг EXIF/технічних м
 ## 5. Дані і API (посилання)
 
 - Схема: `media_asset`, `media_derivative`, `media_link`, `source`, `media_fixity_check`, `collection`, `collection_media`.
-- Ендпоінти: `GET /archive/search`, `GET /media/{id}`, `GET /media/{id}/manifest`, `POST /partner/collections/{id}/ingest`.
+- Ендпоінти: `GET /archive/search`, `GET /archive/{id}`, `GET /archive/{id}/manifest`, `POST /partner/collections/{id}/ingest`.
 
 ## 6. Метрики успіху
 

@@ -21,14 +21,14 @@ const SECTIONS: { title: string; items: { href: string; label: string; live?: bo
       { href: "/admin/people", label: "Меморіал", live: true },
       { href: "/admin/moderation", label: "Модерація", live: true },
       { href: "/admin/places", label: "Місця на карті", live: true },
-      { href: "/admin/media", label: "Медіатека" },
+      { href: "/admin/media", label: "Медіатека", live: true },
       { href: "/admin/news", label: "Новини" },
     ],
   },
   {
     title: "Сайт",
     items: [
-      { href: "/admin/pages", label: "Сторінки" },
+      { href: "/admin/pages", label: "Сторінки", live: true },
       { href: "/admin/menu", label: "Меню" },
     ],
   },

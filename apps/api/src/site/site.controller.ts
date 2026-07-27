@@ -1,5 +1,8 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { SiteService } from "./site.service";
+import { UpdateMenuItemDto } from "./dto/update-menu-item.dto";
+import { UpdatePageBlockDto } from "./dto/update-page-block.dto";
+import { ReorderBlocksDto } from "./dto/reorder-blocks.dto";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RolesGuard } from "../auth/roles.guard";
 import { Roles } from "../auth/roles.decorator";
@@ -35,11 +38,8 @@ export class SiteController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("admin", "superadmin")
   @Patch("admin/menu/:id")
-  patchMenu(
-    @Param("id") id: string,
-    @Body() body: { visible?: boolean; sortOrder?: number; label?: string }
-  ) {
-    return this.site.updateMenuItem(id, body);
+  patchMenu(@Param("id") id: string, @Body() dto: UpdateMenuItemDto) {
+    return this.site.updateMenuItem(id, dto);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -52,14 +52,14 @@ export class SiteController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("admin", "superadmin")
   @Patch("admin/blocks/:id")
-  patchBlock(@Param("id") id: string, @Body() body: { visible?: boolean; sortOrder?: number }) {
-    return this.site.updatePageBlock(id, body);
+  patchBlock(@Param("id") id: string, @Body() dto: UpdatePageBlockDto) {
+    return this.site.updatePageBlock(id, dto);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("admin", "superadmin")
   @Post("admin/blocks/reorder")
-  reorder(@Body() body: { ids: string[] }) {
-    return this.site.reorderPageBlocks(body.ids);
+  reorder(@Body() dto: ReorderBlocksDto) {
+    return this.site.reorderPageBlocks(dto.ids);
   }
 }
