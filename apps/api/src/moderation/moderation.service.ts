@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
+import { generateDefenderPid } from "../common/pid.util";
 
 interface QueueItem {
   id: string;
@@ -89,12 +90,19 @@ export class ModerationService {
 
     const submission = await this.prisma.defenderSubmission.findUnique({ where: { id } });
     if (submission) {
+      // Схвалення саме по собі раніше лише міняло статус заявки — сам
+      // захисник ніколи не з'являвся в реєстрі. Тепер при "approve"
+      // дійсно створюємо (або оновлюємо) запис defender із payload.
+      const defenderId =
+        decision === "approve" ? await this.applySubmission(submission, moderatorUserId) : submission.defenderId;
+
       const updated = await this.prisma.defenderSubmission.update({
         where: { id },
         data: {
           status: decision === "approve" ? "approved" : "rejected",
           decisionNote: reason,
           decidedAt: new Date(),
+          defenderId,
         },
       });
       await this.prisma.auditLog.create({
@@ -105,9 +113,46 @@ export class ModerationService {
           entityId: id,
         },
       });
-      return { entityType: "defender_submission", id: updated.id, status: updated.status };
+      return { entityType: "defender_submission", id: updated.id, status: updated.status, defenderId };
     }
 
     throw new NotFoundException({ code: "not_found", message: "Елемент черги не знайдено" });
+  }
+
+  /** Створює нового захисника з payload заявки або оновлює вже пов'язаного. */
+  private async applySubmission(
+    submission: { id: string; defenderId: string | null; payload: unknown; submittedBy: string },
+    actorId: string,
+  ): Promise<string> {
+    const payload = (submission.payload ?? {}) as Record<string, unknown>;
+    const fullName = String(payload.fullName ?? "").trim();
+    const birthPlace = payload.birthPlace ? String(payload.birthPlace).trim() : null;
+
+    const data = {
+      fullName,
+      fullNameNormalized: fullName.toLowerCase(),
+      birthDate: payload.birthDate ? new Date(String(payload.birthDate)) : null,
+      deathDate: payload.deathDate ? new Date(String(payload.deathDate)) : null,
+      status: "published" as const,
+      verificationStatus: "verified" as const,
+      verifiedBy: actorId,
+      verifiedAt: new Date(),
+    };
+
+    if (submission.defenderId) {
+      await this.prisma.defender.update({ where: { id: submission.defenderId }, data });
+      return submission.defenderId;
+    }
+
+    const pid = await generateDefenderPid(this.prisma);
+    const defender = await this.prisma.defender.create({
+      data: {
+        pid,
+        ...data,
+        bio: birthPlace ? `Місце народження: ${birthPlace}` : null,
+        createdBy: submission.submittedBy,
+      },
+    });
+    return defender.id;
   }
 }

@@ -15,12 +15,51 @@ export default function AdminPeoplePage() {
   const [busyPid, setBusyPid] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  const [showForm, setShowForm] = useState(false);
+  const [fullName, setFullName] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+  const [deathDate, setDeathDate] = useState("");
+  const [bio, setBio] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
   const load = useCallback(() => {
     fetch(`${API}/defenders`)
       .then((r) => (r.ok ? r.json() : { items: [] }))
       .then((d) => setItems(d.items ?? []))
       .catch(() => setError(true));
   }, []);
+
+  async function createPerson(e: React.FormEvent) {
+    e.preventDefault();
+    if (!fullName.trim()) return;
+    setCreating(true);
+    setCreateError(null);
+    const res = await authFetch("/defenders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fullName: fullName.trim(),
+        birthDate: birthDate || undefined,
+        deathDate: deathDate || undefined,
+        bio: bio.trim() || undefined,
+      }),
+    });
+    setCreating(false);
+    if (res.ok) {
+      setFullName("");
+      setBirthDate("");
+      setDeathDate("");
+      setBio("");
+      setShowForm(false);
+      load();
+    } else if (res.status === 403) {
+      setCreateError("Додавання доступне модераторам і адміністраторам.");
+    } else {
+      const body = await res.json().catch(() => null);
+      setCreateError(body?.message ?? "Не вдалося додати людину. Перевірте поля.");
+    }
+  }
 
   useEffect(() => {
     load();
@@ -56,12 +95,20 @@ export default function AdminPeoplePage() {
           <h1 className="font-display text-3xl font-bold text-cream">Меморіал</h1>
           <p className="mt-1 text-sm text-ink-lo">{items.length} записів у реєстрі</p>
         </div>
-        <Link
-          href="/submissions/new"
-          className="rounded-[3px] bg-cream px-4 py-2 text-sm font-semibold text-void hover:bg-white"
-        >
-          + Нова заявка
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            className="rounded-[3px] bg-cream px-4 py-2 text-sm font-semibold text-void hover:bg-white"
+          >
+            {showForm ? "Скасувати" : "+ Додати людину"}
+          </button>
+          <Link
+            href="/submissions/new"
+            className="rounded-[3px] border border-hair px-4 py-2 text-sm text-ink hover:border-cream hover:text-cream"
+          >
+            Заявка від родини
+          </Link>
+        </div>
       </header>
 
       {error && (
@@ -71,6 +118,73 @@ export default function AdminPeoplePage() {
       )}
       {actionError && (
         <p className="mt-6 border-l-2 border-crimson-bright pl-4 text-sm text-ink">{actionError}</p>
+      )}
+
+      {showForm && (
+        <form onSubmit={createPerson} className="mt-6 max-w-xl space-y-4 rounded-[4px] border border-hair p-5">
+          <div>
+            <label className="block text-sm font-semibold text-cream" htmlFor="p-name">
+              Ім’я та прізвище *
+            </label>
+            <input
+              id="p-name"
+              required
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Напр.: Іваненко Іван Іванович"
+              className="mt-1 w-full py-2.5 text-cream"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-cream" htmlFor="p-birth">
+                Дата народження
+              </label>
+              <input
+                id="p-birth"
+                type="date"
+                value={birthDate}
+                onChange={(e) => setBirthDate(e.target.value)}
+                className="mt-1 w-full py-2.5 text-cream"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-cream" htmlFor="p-death">
+                Дата загибелі
+              </label>
+              <input
+                id="p-death"
+                type="date"
+                value={deathDate}
+                onChange={(e) => setDeathDate(e.target.value)}
+                className="mt-1 w-full py-2.5 text-cream"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-cream" htmlFor="p-bio">
+              Коротка біографія
+            </label>
+            <textarea
+              id="p-bio"
+              rows={3}
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              className="mt-1 w-full rounded-[3px] border border-hair bg-transparent px-3 py-2.5 text-sm text-cream outline-none"
+            />
+          </div>
+          {createError && <p className="border-l-2 border-crimson-bright pl-4 text-sm text-ink">{createError}</p>}
+          <button
+            type="submit"
+            disabled={creating}
+            className="rounded-[3px] bg-cream px-4 py-2 text-sm font-semibold text-void hover:bg-white disabled:opacity-50"
+          >
+            {creating ? "Додаємо…" : "Додати до реєстру"}
+          </button>
+          <p className="text-xs text-ink-lo">
+            Запис з’явиться в реєстрі одразу — на відміну від заявки родини, черга модерації не потрібна.
+          </p>
+        </form>
       )}
 
       <input

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 import { AuditService } from "../audit/audit.service";
+import { generateDefenderPid } from "../common/pid.util";
 
 export interface DefenderSummaryDto {
   pid: string;
@@ -142,6 +143,38 @@ export class DefendersService {
       data: { defenderId: d.id, authorUserId, body, status: "pending" },
     });
     return { id: memory.id, defenderPid: pid, status: memory.status, createdAt: memory.createdAt };
+  }
+
+  /**
+   * Пряме створення захисника адміністратором/модератором — на відміну
+   * від заявки родини, публікується одразу (без черги на розгляд), бо
+   * автор дії вже має право контенту довіряти.
+   */
+  async create(dto: { fullName: string; birthDate?: string; deathDate?: string; bio?: string }, actorId: string) {
+    const pid = await generateDefenderPid(this.prisma);
+    const defender = await this.prisma.defender.create({
+      data: {
+        pid,
+        fullName: dto.fullName,
+        fullNameNormalized: dto.fullName.toLowerCase(),
+        birthDate: dto.birthDate ? new Date(dto.birthDate) : null,
+        deathDate: dto.deathDate ? new Date(dto.deathDate) : null,
+        bio: dto.bio || null,
+        status: "published",
+        verificationStatus: "verified",
+        verifiedBy: actorId,
+        verifiedAt: new Date(),
+        createdBy: actorId,
+      },
+    });
+    await this.audit.log({
+      actorId,
+      action: "defender.create",
+      entityType: "defender",
+      entityId: defender.id,
+      diff: { pid, fullName: dto.fullName },
+    });
+    return this.toSummary(defender);
   }
 
   /**

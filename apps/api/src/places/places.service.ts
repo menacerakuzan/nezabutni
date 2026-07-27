@@ -1,5 +1,5 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
-import { PlaceType } from "@prisma/client";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { Prisma, PlaceType } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { CreatePlaceDto, UpdatePlaceDto } from "./dto/place.dto";
 
@@ -15,6 +15,7 @@ interface PlaceRow {
 interface AdminPlaceRow extends PlaceRow {
   status: string;
   description: string | null;
+  cover_media_id: string | null;
 }
 
 function slugify(name: string): string {
@@ -95,6 +96,7 @@ export class PlacesService {
   async adminList() {
     const rows = await this.prisma.$queryRawUnsafe<AdminPlaceRow[]>(
       `SELECT p.id, p.name, p.type::text as type, p.status, p.description, r.name as region_name,
+              p.cover_media_id,
               ST_X(p.geom_point::geometry) as lon, ST_Y(p.geom_point::geometry) as lat
        FROM "place" p
        LEFT JOIN "region" r ON r.id = p.region_id
@@ -112,6 +114,7 @@ export class PlacesService {
         name: dto.name,
         slug,
         description: dto.description,
+        coverMediaId: dto.coverMediaId,
         status: "published",
         createdBy,
       },
@@ -135,6 +138,7 @@ export class PlacesService {
         type: dto.type as PlaceType,
         name: dto.name,
         description: dto.description,
+        coverMediaId: dto.coverMediaId,
       },
     });
 
@@ -152,7 +156,18 @@ export class PlacesService {
   async remove(id: string) {
     const existing = await this.prisma.place.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException({ code: "not_found", message: "Місце не знайдено" });
-    await this.prisma.place.delete({ where: { id } });
+    try {
+      await this.prisma.place.delete({ where: { id } });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
+        throw new ConflictException({
+          code: "in_use",
+          message:
+            "Це місце пов'язане з профілем захисника (місце народження, загибелі чи поховання) — спершу від'єднайте його від профілю.",
+        });
+      }
+      throw err;
+    }
     return { id, deleted: true };
   }
 }

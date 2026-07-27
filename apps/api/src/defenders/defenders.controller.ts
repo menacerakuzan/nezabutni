@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Post, Param, Query, Headers, Ip, UseGuards } from "@nestjs/common";
 import { DefendersService } from "./defenders.service";
+import { CreateDefenderDto } from "./dto/create-defender.dto";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RolesGuard } from "../auth/roles.guard";
 import { Roles } from "../auth/roles.decorator";
@@ -36,6 +37,14 @@ export class DefendersController {
   @Get(":pid/memories")
   listMemories(@Param("pid") pid: string, @Query("limit") limit = "20") {
     return this.defenders.listMemories(pid, Number(limit) || 20);
+  }
+
+  // POST /defenders — пряме створення (без черги модерації) для staff
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("moderator", "admin", "superadmin")
+  @Post()
+  create(@Body() dto: CreateDefenderDto, @CurrentUser() user: CurrentUserPayload) {
+    return this.defenders.create(dto, user.userId);
   }
 
   // DELETE /defenders/{pid} — адмінське видалення з каскадом дочірніх записів

@@ -1,4 +1,4 @@
-import { IsIn, IsLatitude, IsLongitude, IsNotEmpty, IsOptional, IsString, MaxLength } from "class-validator";
+import { IsIn, IsLatitude, IsLongitude, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
 
 const PLACE_TYPES = ["battle", "memorial", "burial", "monument", "museum_site", "frontline_segment"];
 
@@ -20,6 +20,10 @@ export class CreatePlaceDto {
 
   @IsLatitude()
   lat!: number;
+
+  @IsUUID()
+  @IsOptional()
+  coverMediaId?: string;
 }
 
 export class UpdatePlaceDto {
@@ -43,4 +47,8 @@ export class UpdatePlaceDto {
   @IsLatitude()
   @IsOptional()
   lat?: number;
+
+  @IsUUID()
+  @IsOptional()
+  coverMediaId?: string;
 }
