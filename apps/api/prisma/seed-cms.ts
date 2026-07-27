@@ -118,6 +118,10 @@ const HOME_BLOCKS: { type: string; label: string; props: Prisma.InputJsonValue }
   },
 ];
 
+function isEmptyProps(props: Prisma.JsonValue | null): boolean {
+  return props === null || (typeof props === "object" && props !== null && Object.keys(props).length === 0);
+}
+
 async function main() {
   for (const [location, label, href] of MENU) {
     const existing = await prisma.menuItem.findFirst({ where: { location, href } });
@@ -133,9 +137,10 @@ async function main() {
     const existing = await prisma.pageBlock.findFirst({ where: { page: "home", blockType } });
     if (!existing) {
       await prisma.pageBlock.create({ data: { page: "home", blockType, label, sortOrder: i, props } });
-    } else if (existing.props === null) {
-      // Рядок уже існував (зі старого сіду без props) — донаповнюємо текстом,
-      // не чіпаючи sortOrder/visible, які міг змінити адміністратор.
+    } else if (isEmptyProps(existing.props)) {
+      // Рядок уже існував без реального props (null або порожній {} зі
+      // старого сіду) — донаповнюємо текстом, не чіпаючи sortOrder/visible,
+      // які міг змінити адміністратор.
       await prisma.pageBlock.update({ where: { id: existing.id }, data: { props } });
     }
   }
