@@ -13,10 +13,8 @@ import { readdir, readFile, mkdir, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { inflateRawSync } from "node:zlib";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const prisma = new PrismaClient();
 
 // Локальний диск, той самий формат ключів, що й src/media/storage/local-storage.provider.ts.
@@ -29,14 +27,14 @@ async function storagePut(key: string, buffer: Buffer): Promise<void> {
 }
 
 const args = Object.fromEntries(
-  process.argv.slice(2).flatMap((a, i, arr) => {
+  process.argv.slice(2).flatMap((a, i, arr): [string, string | boolean][] => {
     if (!a.startsWith("--")) return [];
     const key = a.slice(2);
     const next = arr[i + 1];
     if (next && !next.startsWith("--")) return [[key, next]];
     return [[key, true]];
   }),
-);
+) as Record<string, string | boolean>;
 
 const ARCHIVE_DIR = String(args.dir ?? path.resolve(__dirname, "../../../archive/Меморіал Героїв"));
 const DRY_RUN = Boolean(args["dry-run"]);
