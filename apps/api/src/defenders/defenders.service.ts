@@ -151,7 +151,17 @@ export class DefendersService {
    * від заявки родини, публікується одразу (без черги на розгляд), бо
    * автор дії вже має право контенту довіряти.
    */
-  async create(dto: { fullName: string; birthDate?: string; deathDate?: string; bio?: string }, actorId: string) {
+  async create(
+    dto: {
+      fullName: string;
+      birthDate?: string;
+      deathDate?: string;
+      bio?: string;
+      callsign?: string;
+      portraitMediaId?: string;
+    },
+    actorId: string,
+  ) {
     const pid = await generateDefenderPid(this.prisma);
     const defender = await this.prisma.defender.create({
       data: {
@@ -161,6 +171,8 @@ export class DefendersService {
         birthDate: dto.birthDate ? new Date(dto.birthDate) : null,
         deathDate: dto.deathDate ? new Date(dto.deathDate) : null,
         bio: dto.bio || null,
+        callsign: dto.callsign || null,
+        portraitMediaId: dto.portraitMediaId || null,
         status: "published",
         verificationStatus: "verified",
         verifiedBy: actorId,

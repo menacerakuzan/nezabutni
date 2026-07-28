@@ -1,4 +1,4 @@
-import { IsDateString, IsNotEmpty, IsOptional, IsString, MaxLength } from "class-validator";
+import { IsDateString, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
 
 export class CreateDefenderDto {
   @IsString()
@@ -17,4 +17,13 @@ export class CreateDefenderDto {
   @IsString()
   @IsOptional()
   bio?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(120)
+  callsign?: string;
+
+  @IsUUID()
+  @IsOptional()
+  portraitMediaId?: string;
 }

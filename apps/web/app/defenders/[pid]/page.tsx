@@ -87,7 +87,7 @@ export default async function DefenderProfilePage({
         <div className="pt-10">
           <span className="caption">Життєпис</span>
           {defender.bio ? (
-            <p className="mt-6 font-display text-2xl leading-relaxed text-cream md:text-3xl [text-wrap:balance]">
+            <p className="mt-6 whitespace-pre-line font-display text-2xl leading-relaxed text-cream md:text-3xl [text-wrap:balance]">
               {defender.bio}
             </p>
           ) : (
