@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, Post, Param, Query, Headers, Ip, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Post, Patch, Param, Query, Headers, Ip, UseGuards } from "@nestjs/common";
 import { DefendersService } from "./defenders.service";
 import { CreateDefenderDto } from "./dto/create-defender.dto";
+import { UpdateDefenderDto } from "./dto/update-defender.dto";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RolesGuard } from "../auth/roles.guard";
 import { Roles } from "../auth/roles.decorator";
@@ -45,6 +46,14 @@ export class DefendersController {
   @Post()
   create(@Body() dto: CreateDefenderDto, @CurrentUser() user: CurrentUserPayload) {
     return this.defenders.create(dto, user.userId);
+  }
+
+  // PATCH /defenders/{pid} — редагування вже створеного запису
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("moderator", "admin", "superadmin")
+  @Patch(":pid")
+  update(@Param("pid") pid: string, @Body() dto: UpdateDefenderDto, @CurrentUser() user: CurrentUserPayload) {
+    return this.defenders.update(pid, dto, user.userId);
   }
 
   // DELETE /defenders/{pid} — адмінське видалення з каскадом дочірніх записів

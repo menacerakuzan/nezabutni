@@ -502,6 +502,7 @@ model Exhibit {
   summary      String?
   modelUri     String?       @map("model_uri") @db.VarChar(1000)
   panoramaUri  String?       @map("panorama_uri") @db.VarChar(1000)
+  coverMediaId String?       @map("cover_media_id") @db.Uuid
   blocks       Json
   curatorId    String?       @map("curator_id") @db.Uuid
   curator      AppUser?      @relation(fields: [curatorId], references: [id])

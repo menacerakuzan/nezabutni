@@ -10,8 +10,10 @@ import { fetchRoutes, type MemoryRoute } from "../lib/api";
 interface PlaceFeature {
   type: "Feature";
   geometry: { type: "Point"; coordinates: [number, number] };
-  properties: { id: string; name: string; place_type: string; region_name: string | null };
+  properties: { id: string; name: string; place_type: string; region_name: string | null; cover_media_id: string | null };
 }
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api/v1";
 
 const TYPE_LABEL: Record<string, string> = {
   battle: "Місце бою",
@@ -284,7 +286,7 @@ export function MapView() {
         <div className="absolute bottom-4 right-4 w-[min(88vw,320px)] overflow-hidden rounded-[4px] border border-hair-strong bg-[#0B0F16]/95 backdrop-blur-md">
           <div className="relative h-36">
             <img
-              src={TYPE_PHOTO[selected.place_type] ?? MEDIA.redCandles}
+              src={selected.cover_media_id ? `${API_URL}/media/file/${selected.cover_media_id}` : (TYPE_PHOTO[selected.place_type] ?? MEDIA.redCandles)}
               alt=""
               className="h-full w-full object-cover [filter:saturate(0.55)_brightness(0.8)]"
             />

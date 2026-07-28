@@ -13,29 +13,13 @@ interface UserRow {
   roles: string[];
 }
 
-interface RoleDef {
-  id: number;
-  code: string;
-  nameUk: string;
-}
-
-const ROLE_LABEL: Record<string, string> = {
-  superadmin: "Суперадміністратор",
-  admin: "Адміністратор",
-  moderator: "Модератор",
-  archivist: "Архіваріус",
-  verifier_gov: "Верифікатор (ВА/ТЦК)",
-  partner_curator: "Куратор партнера",
-  editor: "Контент-менеджер",
-  viewer: "Відвідувач",
-};
+/** Проста дворівнева модель: «Адміністратор» (повний доступ до /admin) або звичайний користувач. */
+const isAdmin = (roles: string[]) => roles.includes("admin") || roles.includes("superadmin");
 
 export default function AdminUsersPage() {
   const { user: me } = useAuth();
-  const isSuperadmin = me?.roles.includes("superadmin") ?? false;
 
   const [users, setUsers] = useState<UserRow[]>([]);
-  const [roles, setRoles] = useState<RoleDef[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -44,17 +28,16 @@ export default function AdminUsersPage() {
     setLoading(true);
     setError(null);
     try {
-      const [uRes, rRes] = await Promise.all([authFetch("/admin/users"), authFetch("/admin/users/roles")]);
-      if (uRes.status === 403) {
+      const res = await authFetch("/admin/users");
+      if (res.status === 403) {
         setError("Розділ доступний лише адміністраторам.");
         return;
       }
-      if (!uRes.ok || !rRes.ok) {
+      if (!res.ok) {
         setError("Не вдалося завантажити користувачів.");
         return;
       }
-      setUsers(await uRes.json());
-      setRoles(await rRes.json());
+      setUsers(await res.json());
     } catch {
       setError("Немає зв’язку із сервером.");
     } finally {
@@ -79,19 +62,19 @@ export default function AdminUsersPage() {
     else setError("Не вдалося змінити статус.");
   }
 
-  async function toggleRole(u: UserRow, roleCode: string) {
-    const has = u.roles.includes(roleCode);
-    setBusy(`${u.id}-${roleCode}`);
-    const res = await authFetch(`/admin/users/${u.id}/roles${has ? `/${roleCode}` : ""}`, {
+  async function toggleAdmin(u: UserRow) {
+    const has = u.roles.includes("admin");
+    setBusy(u.id);
+    const res = await authFetch(`/admin/users/${u.id}/roles${has ? "/admin" : ""}`, {
       method: has ? "DELETE" : "POST",
       headers: has ? undefined : { "Content-Type": "application/json" },
-      body: has ? undefined : JSON.stringify({ role: roleCode }),
+      body: has ? undefined : JSON.stringify({ role: "admin" }),
     });
     setBusy(null);
     if (res.ok) {
       setUsers(
         users.map((x) =>
-          x.id === u.id ? { ...x, roles: has ? x.roles.filter((r) => r !== roleCode) : [...x.roles, roleCode] } : x
+          x.id === u.id ? { ...x, roles: has ? x.roles.filter((r) => r !== "admin") : [...x.roles, "admin"] } : x
         )
       );
     } else {
@@ -102,18 +85,18 @@ export default function AdminUsersPage() {
   return (
     <div>
       <h1 className="font-display text-3xl font-bold text-cream">Користувачі</h1>
-      <p className="mt-1 text-sm text-ink-lo">Ролі, доступи й статус акаунтів</p>
+      <p className="mt-1 text-sm text-ink-lo">Хто має доступ до адмін-панелі, хто заблокований</p>
 
       {error && <p className="mt-6 border-l-2 border-crimson-bright pl-4 text-sm text-ink">{error}</p>}
 
       {!error && (
         <div className="mt-6 overflow-x-auto rounded-[4px] border border-hair">
-          <table className="w-full min-w-[720px] text-left text-sm">
+          <table className="w-full min-w-[600px] text-left text-sm">
             <thead>
               <tr className="border-b border-hair text-[11px] uppercase text-ink-lo">
                 <th className="px-4 py-3 font-semibold">Користувач</th>
                 <th className="px-4 py-3 font-semibold">Статус</th>
-                <th className="px-4 py-3 font-semibold">Ролі</th>
+                <th className="px-4 py-3 font-semibold">Адміністратор</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-hair">
@@ -123,7 +106,7 @@ export default function AdminUsersPage() {
                 <tr><td colSpan={3} className="px-4 py-6 text-ink-lo">Користувачів немає.</td></tr>
               ) : (
                 users.map((u) => (
-                  <tr key={u.id} className="hover:bg-white/[0.02] align-top">
+                  <tr key={u.id} className="hover:bg-white/[0.02]">
                     <td className="px-4 py-3">
                       <p className="font-semibold text-cream">{u.displayName}</p>
                       <p className="text-xs text-ink-lo">{u.email ?? "—"}</p>
@@ -141,25 +124,16 @@ export default function AdminUsersPage() {
                       </button>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1.5">
-                        {roles.map((r) => {
-                          const active = u.roles.includes(r.code);
-                          return (
-                            <button
-                              key={r.code}
-                              onClick={() => toggleRole(u, r.code)}
-                              disabled={!isSuperadmin || busy === `${u.id}-${r.code}`}
-                              className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors disabled:cursor-not-allowed ${
-                                active
-                                  ? "bg-white/[0.12] text-cream"
-                                  : "border border-hair text-ink-faint hover:border-hair-strong"
-                              } ${isSuperadmin ? "" : "opacity-70"}`}
-                            >
-                              {ROLE_LABEL[r.code] ?? r.nameUk}
-                            </button>
-                          );
-                        })}
-                      </div>
+                      <button
+                        onClick={() => toggleAdmin(u)}
+                        disabled={busy === u.id || u.roles.includes("superadmin")}
+                        className={`rounded-full px-3 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                          isAdmin(u.roles) ? "bg-white/[0.12] text-cream" : "border border-hair text-ink-faint hover:border-hair-strong"
+                        }`}
+                        title={u.roles.includes("superadmin") ? "Засновник платформи — статус незмінний" : undefined}
+                      >
+                        {u.roles.includes("superadmin") ? "Засновник" : isAdmin(u.roles) ? "Так" : "Ні"}
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -167,10 +141,6 @@ export default function AdminUsersPage() {
             </tbody>
           </table>
         </div>
-      )}
-
-      {!isSuperadmin && !error && (
-        <p className="mt-4 text-xs text-ink-faint">Зміна ролей доступна лише суперадміністратору.</p>
       )}
     </div>
   );

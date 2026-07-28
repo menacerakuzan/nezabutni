@@ -30,15 +30,16 @@ export class UsersController {
     return this.users.setStatus(id, dto.status, user.userId);
   }
 
-  // Видача/відкликання ролей — лише superadmin, щоб адмін не міг
-  // призначити собі чи іншим superadmin (ескалація прав).
-  @Roles("superadmin")
+  // Будь-який адміністратор може зробити іншого користувача адміном
+  // (проста дворівнева модель: користувач/адмін). "superadmin" через цей
+  // ендпоїнт видати не можна — див. перевірку в UsersService.grantRole.
+  @Roles("admin", "superadmin")
   @Post(":id/roles")
   grantRole(@Param("id") id: string, @Body() dto: RoleCodeDto, @CurrentUser() user: CurrentUserPayload) {
     return this.users.grantRole(id, dto.role, user.userId);
   }
 
-  @Roles("superadmin")
+  @Roles("admin", "superadmin")
   @Delete(":id/roles/:role")
   revokeRole(@Param("id") id: string, @Param("role") role: string, @CurrentUser() user: CurrentUserPayload) {
     return this.users.revokeRole(id, role, user.userId);

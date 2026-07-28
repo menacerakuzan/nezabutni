@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { generateDefenderPid } from "../common/pid.util";
+import { config } from "../config";
 
 export interface DefenderSummaryDto {
   pid: string;
@@ -45,7 +46,7 @@ export class DefendersService {
       deathDate: d.deathDate ? d.deathDate.toISOString().slice(0, 10) : null,
       unitName: d.unit?.name ?? null,
       regionName: d.region?.name ?? null,
-      portraitUrl: null,
+      portraitUrl: d.portraitMediaId ? `${config.uploads.publicBaseUrl}/${d.portraitMediaId}` : null,
       excerpt: d.bio ? (d.bio.length > 160 ? d.bio.slice(0, 157) + "…" : d.bio) : "",
       verificationStatus: d.verificationStatus,
       lon: coords?.lon ?? null,
@@ -174,6 +175,30 @@ export class DefendersService {
       entityId: defender.id,
       diff: { pid, fullName: dto.fullName },
     });
+    return this.toSummary(defender);
+  }
+
+  /** Адмінське редагування вже створеного запису — ім'я, дати, біо, портрет. */
+  async update(
+    pid: string,
+    dto: { fullName?: string; birthDate?: string; deathDate?: string; bio?: string; portraitMediaId?: string },
+    actorId: string,
+  ) {
+    const existing = await this.prisma.defender.findUnique({ where: { pid } });
+    if (!existing) throw new NotFoundException({ code: "not_found", message: "Захисника не знайдено" });
+
+    const defender = await this.prisma.defender.update({
+      where: { pid },
+      data: {
+        fullName: dto.fullName,
+        fullNameNormalized: dto.fullName ? dto.fullName.toLowerCase() : undefined,
+        birthDate: dto.birthDate ? new Date(dto.birthDate) : undefined,
+        deathDate: dto.deathDate ? new Date(dto.deathDate) : undefined,
+        bio: dto.bio,
+        portraitMediaId: dto.portraitMediaId,
+      },
+    });
+    await this.audit.log({ actorId, action: "defender.update", entityType: "defender", entityId: defender.id, diff: dto });
     return this.toSummary(defender);
   }
 

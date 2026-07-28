@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DefenderSummary } from "../../../lib/types";
 import { formatDates } from "../../../lib/mock-data";
 import { authFetch } from "../../../lib/auth-client";
@@ -16,12 +16,19 @@ export default function AdminPeoplePage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const [showForm, setShowForm] = useState(false);
+  const [editingPid, setEditingPid] = useState<string | null>(null);
   const [fullName, setFullName] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [deathDate, setDeathDate] = useState("");
   const [bio, setBio] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const [portraitUrl, setPortraitUrl] = useState<string | null>(null);
+  const [newPortraitId, setNewPortraitId] = useState<string | null>(null);
+  const [portraitBusy, setPortraitBusy] = useState(false);
+  const [portraitError, setPortraitError] = useState<string | null>(null);
+  const portraitInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
     fetch(`${API}/defenders`)
@@ -30,40 +37,95 @@ export default function AdminPeoplePage() {
       .catch(() => setError(true));
   }, []);
 
-  async function createPerson(e: React.FormEvent) {
-    e.preventDefault();
-    if (!fullName.trim()) return;
-    setCreating(true);
-    setCreateError(null);
-    const res = await authFetch("/defenders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fullName: fullName.trim(),
-        birthDate: birthDate || undefined,
-        deathDate: deathDate || undefined,
-        bio: bio.trim() || undefined,
-      }),
-    });
-    setCreating(false);
-    if (res.ok) {
-      setFullName("");
-      setBirthDate("");
-      setDeathDate("");
-      setBio("");
-      setShowForm(false);
-      load();
-    } else if (res.status === 403) {
-      setCreateError("Додавання доступне модераторам і адміністраторам.");
-    } else {
-      const body = await res.json().catch(() => null);
-      setCreateError(body?.message ?? "Не вдалося додати людину. Перевірте поля.");
-    }
-  }
-
   useEffect(() => {
     load();
   }, [load]);
+
+  function resetForm() {
+    setEditingPid(null);
+    setFullName("");
+    setBirthDate("");
+    setDeathDate("");
+    setBio("");
+    setPortraitUrl(null);
+    setNewPortraitId(null);
+    setPortraitError(null);
+    setFormError(null);
+  }
+
+  function startCreate() {
+    resetForm();
+    setShowForm(true);
+  }
+
+  async function startEdit(pid: string) {
+    resetForm();
+    setShowForm(true);
+    setEditingPid(pid);
+    const res = await fetch(`${API}/defenders/${pid}`);
+    if (!res.ok) return;
+    const d = await res.json();
+    setFullName(d.fullName ?? "");
+    setBirthDate(d.birthDate ?? "");
+    setDeathDate(d.deathDate ?? "");
+    setBio(d.bio ?? "");
+    setPortraitUrl(d.portraitUrl ?? null);
+  }
+
+  async function uploadPortrait(file: File) {
+    setPortraitError(null);
+    setPortraitBusy(true);
+    const body = new FormData();
+    body.append("file", file);
+    const res = await authFetch("/media/upload", { method: "POST", body });
+    setPortraitBusy(false);
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      setPortraitError(data?.message ?? "Не вдалося завантажити фото.");
+      return;
+    }
+    setNewPortraitId(data.id);
+    setPortraitUrl(`${API}${(data.url as string).replace("/api/v1", "")}`);
+  }
+
+  async function submitForm(e: React.FormEvent) {
+    e.preventDefault();
+    if (!fullName.trim()) return;
+    setSaving(true);
+    setFormError(null);
+
+    const payload = {
+      fullName: fullName.trim(),
+      birthDate: birthDate || undefined,
+      deathDate: deathDate || undefined,
+      bio: bio.trim() || undefined,
+      ...(newPortraitId ? { portraitMediaId: newPortraitId } : {}),
+    };
+
+    const res = editingPid
+      ? await authFetch(`/defenders/${editingPid}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+      : await authFetch("/defenders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+    setSaving(false);
+    if (res.ok) {
+      resetForm();
+      setShowForm(false);
+      load();
+    } else if (res.status === 403) {
+      setFormError("Редагування доступне модераторам і адміністраторам.");
+    } else {
+      const body = await res.json().catch(() => null);
+      setFormError(body?.message ?? "Не вдалося зберегти. Перевірте поля.");
+    }
+  }
 
   const filtered = useMemo(
     () => items.filter((d) => d.fullName.toLowerCase().includes(q.trim().toLowerCase())),
@@ -97,7 +159,7 @@ export default function AdminPeoplePage() {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => setShowForm((v) => !v)}
+            onClick={() => (showForm ? setShowForm(false) : startCreate())}
             className="rounded-[3px] bg-cream px-4 py-2 text-sm font-semibold text-void hover:bg-white"
           >
             {showForm ? "Скасувати" : "+ Додати людину"}
@@ -121,7 +183,10 @@ export default function AdminPeoplePage() {
       )}
 
       {showForm && (
-        <form onSubmit={createPerson} className="mt-6 max-w-xl space-y-4 rounded-[4px] border border-hair p-5">
+        <form onSubmit={submitForm} className="mt-6 max-w-xl space-y-4 rounded-[4px] border border-hair p-5">
+          <h2 className="font-display text-lg font-semibold text-cream">
+            {editingPid ? `Редагування · ${editingPid}` : "Нова людина"}
+          </h2>
           <div>
             <label className="block text-sm font-semibold text-cream" htmlFor="p-name">
               Ім’я та прізвище *
@@ -173,17 +238,57 @@ export default function AdminPeoplePage() {
               className="mt-1 w-full rounded-[3px] border border-hair bg-transparent px-3 py-2.5 text-sm text-cream outline-none"
             />
           </div>
-          {createError && <p className="border-l-2 border-crimson-bright pl-4 text-sm text-ink">{createError}</p>}
+
+          <div>
+            <p className="block text-sm font-semibold text-cream">Портрет</p>
+            {portraitUrl ? (
+              <div className="mt-2 flex items-center gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={portraitUrl} alt="" className="h-20 w-16 rounded-[3px] object-cover" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPortraitUrl(null);
+                    setNewPortraitId(null);
+                  }}
+                  className="text-xs text-ink-lo hover:text-crimson-bright"
+                >
+                  Прибрати
+                </button>
+              </div>
+            ) : (
+              <div
+                onClick={() => portraitInputRef.current?.click()}
+                role="button"
+                tabIndex={0}
+                className="mt-2 cursor-pointer rounded-[3px] border border-dashed border-hair-strong px-4 py-6 text-center text-sm text-ink-lo hover:border-cream"
+              >
+                {portraitBusy ? "Завантажуємо…" : "Натисніть, щоб додати фото"}
+                <input
+                  ref={portraitInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(e) => e.target.files?.[0] && uploadPortrait(e.target.files[0])}
+                />
+              </div>
+            )}
+            {portraitError && <p className="mt-1.5 text-xs text-crimson-bright">{portraitError}</p>}
+          </div>
+
+          {formError && <p className="border-l-2 border-crimson-bright pl-4 text-sm text-ink">{formError}</p>}
           <button
             type="submit"
-            disabled={creating}
+            disabled={saving}
             className="rounded-[3px] bg-cream px-4 py-2 text-sm font-semibold text-void hover:bg-white disabled:opacity-50"
           >
-            {creating ? "Додаємо…" : "Додати до реєстру"}
+            {saving ? "Зберігаємо…" : editingPid ? "Зберегти зміни" : "Додати до реєстру"}
           </button>
-          <p className="text-xs text-ink-lo">
-            Запис з’явиться в реєстрі одразу — на відміну від заявки родини, черга модерації не потрібна.
-          </p>
+          {!editingPid && (
+            <p className="text-xs text-ink-lo">
+              Запис з’явиться в реєстрі одразу — на відміну від заявки родини, черга модерації не потрібна.
+            </p>
+          )}
         </form>
       )}
 
@@ -225,6 +330,9 @@ export default function AdminPeoplePage() {
                 </td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-4">
+                    <button onClick={() => startEdit(d.pid)} className="text-ink hover:text-cream">
+                      Редагувати
+                    </button>
                     <Link href={`/defenders/${d.pid}`} className="text-gold hover:text-gold-soft">
                       Відкрити ↗
                     </Link>
@@ -244,8 +352,7 @@ export default function AdminPeoplePage() {
       </div>
 
       <p className="mt-4 text-xs text-ink-lo">
-        Зміни до записів вносяться через заявки родин і чергу модерації — так кожна правка має
-        джерело й автора. Видалення доступне адміністраторам і фіксується в журналі змін.
+        Видалення доступне адміністраторам і фіксується в журналі змін.
       </p>
     </div>
   );

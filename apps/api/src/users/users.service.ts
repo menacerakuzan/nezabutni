@@ -48,6 +48,12 @@ export class UsersService {
   }
 
   async grantRole(userId: string, roleCode: string, actorId: string) {
+    if (roleCode === "superadmin") {
+      throw new BadRequestException({
+        code: "forbidden_role",
+        message: "Роль «суперадміністратор» не можна видати через цю форму.",
+      });
+    }
     const role = await this.prisma.role.findUnique({ where: { code: roleCode } });
     if (!role) throw new BadRequestException({ code: "unknown_role", message: "Невідома роль." });
 

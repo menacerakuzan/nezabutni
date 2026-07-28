@@ -23,6 +23,8 @@ const SECTIONS: { title: string; items: { href: string; label: string; live?: bo
       { href: "/admin/places", label: "Місця на карті", live: true },
       { href: "/admin/media", label: "Медіатека", live: true },
       { href: "/admin/news", label: "Новини", live: true },
+      { href: "/admin/stories", label: "Тексти пам’яті", live: true },
+      { href: "/admin/museum", label: "Онлайн-музей", live: true },
     ],
   },
   {

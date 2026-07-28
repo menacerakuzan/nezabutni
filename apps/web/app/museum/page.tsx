@@ -10,11 +10,13 @@ interface ExhibitSummary {
   slug: string;
   title: string;
   summary: string | null;
+  coverUrl: string | null;
 }
 interface StorySummary {
   slug: string;
   title: string;
   summary: string | null;
+  coverUrl: string | null;
 }
 
 async function fetchJson<T>(path: string): Promise<T[]> {
@@ -28,10 +30,6 @@ async function fetchJson<T>(path: string): Promise<T[]> {
     return [];
   }
 }
-
-// Обкладинки залів музею (демо; у продакшні — кураторські матеріали)
-const EXHIBIT_COVERS = [MEDIA.framedPhoto, MEDIA.archiveTable, MEDIA.chapelCandles, MEDIA.bwCeremony];
-const STORY_COVERS = [MEDIA.crowdFlag, MEDIA.march, MEDIA.lettersString, MEDIA.winterGrave];
 
 export default async function MuseumPage() {
   const [exhibits, stories] = await Promise.all([
@@ -76,13 +74,17 @@ export default async function MuseumPage() {
             {exhibits.map((e, i) => (
               <Reveal key={e.slug} delay={(i % 2) * 0.08}>
                 <Link href={`/museum/${e.slug}`} className="group relative block overflow-hidden">
-                  <MediaFrame
-                    caption={`Зала ${String(i + 1).padStart(2, "0")}`}
-                    src={EXHIBIT_COVERS[i % EXHIBIT_COVERS.length]}
-                    alt=""
-                    aspect="aspect-[16/10]"
-                    kenBurns
-                  />
+                  {e.coverUrl ? (
+                    <MediaFrame
+                      caption={`Зала ${String(i + 1).padStart(2, "0")}`}
+                      src={e.coverUrl}
+                      alt=""
+                      aspect="aspect-[16/10]"
+                      kenBurns
+                    />
+                  ) : (
+                    <div className="aspect-[16/10] w-full border border-hair bg-white/[0.02]" />
+                  )}
                   <div className="pointer-events-none absolute inset-0 flex flex-col justify-end p-8 pb-14">
                     <h2 className="font-display text-3xl font-semibold text-cream md:text-4xl">
                       {e.title}
@@ -115,13 +117,17 @@ export default async function MuseumPage() {
                     href={`/stories/${s.slug}`}
                     className="group flex items-center gap-6 py-6 transition-colors hover:bg-white/[0.02] md:gap-10"
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={STORY_COVERS[i % STORY_COVERS.length]}
-                      alt=""
-                      loading="lazy"
-                      className="h-24 w-36 flex-none rounded-[3px] object-cover [filter:saturate(0.45)_brightness(0.8)] transition-all duration-500 group-hover:[filter:saturate(0.8)_brightness(1)]"
-                    />
+                    {s.coverUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={s.coverUrl}
+                        alt=""
+                        loading="lazy"
+                        className="h-24 w-36 flex-none rounded-[3px] object-cover [filter:saturate(0.45)_brightness(0.8)] transition-all duration-500 group-hover:[filter:saturate(0.8)_brightness(1)]"
+                      />
+                    ) : (
+                      <div className="h-24 w-36 flex-none rounded-[3px] border border-hair bg-white/[0.02]" />
+                    )}
                     <div className="min-w-0 flex-1">
                       <h3 className="font-display text-xl font-semibold text-cream transition-colors group-hover:text-gold md:text-2xl">
                         {s.title}

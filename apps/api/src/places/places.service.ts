@@ -8,6 +8,7 @@ interface PlaceRow {
   name: string;
   type: string;
   region_name: string | null;
+  cover_media_id: string | null;
   lon: number;
   lat: number;
 }
@@ -67,7 +68,7 @@ export class PlacesService {
 
     const where = conditions.join(" AND ");
     const rows = await this.prisma.$queryRawUnsafe<PlaceRow[]>(
-      `SELECT p.id, p.name, p.type::text as type, r.name as region_name,
+      `SELECT p.id, p.name, p.type::text as type, r.name as region_name, p.cover_media_id,
               ST_X(p.geom_point::geometry) as lon, ST_Y(p.geom_point::geometry) as lat
        FROM "place" p
        LEFT JOIN "region" r ON r.id = p.region_id
@@ -87,6 +88,7 @@ export class PlacesService {
           name: p.name,
           place_type: p.type,
           region_name: p.region_name,
+          cover_media_id: p.cover_media_id,
         },
       })),
     };
@@ -157,7 +159,12 @@ export class PlacesService {
     const existing = await this.prisma.place.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException({ code: "not_found", message: "Місце не знайдено" });
     try {
-      await this.prisma.place.delete({ where: { id } });
+      await this.prisma.$transaction([
+        // Точка в маршруті пам'яті — це лише порядок показу, не належність;
+        // видалення точки з карти прибирає її й з маршруту автоматично.
+        this.prisma.memoryRoutePlace.deleteMany({ where: { placeId: id } }),
+        this.prisma.place.delete({ where: { id } }),
+      ]);
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
         throw new ConflictException({
