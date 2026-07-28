@@ -30,22 +30,31 @@ export function lonLatToField(lon: number, lat: number): [number, number] {
   return [x, y];
 }
 
-/**
- * Чи лежить точка (у координатах поля) всередині контуру області.
- * Потрібно, щоб розкид вогника довкола реальної точки не «випадав» у
- * море — для прибережних міст (Одеса, Чорноморськ…) випадковий кут
- * інакше половину разів веде в бік моря.
- */
-export function pointInOutline(point: readonly [number, number]): boolean {
+function pointInRing(point: readonly [number, number], ring: Ring): boolean {
   const [x, y] = point;
   let inside = false;
-  for (let i = 0, j = OUTLINE.length - 1; i < OUTLINE.length; j = i++) {
-    const [xi, yi] = OUTLINE[i]!;
-    const [xj, yj] = OUTLINE[j]!;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]!;
+    const [xj, yj] = ring[j]!;
     const intersect = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
     if (intersect) inside = !inside;
   }
   return inside;
+}
+
+/**
+ * Чи лежить точка (у координатах поля) на суші. OUTLINE — контур усієї
+ * області, надто грубий біля великих міст (напр., в Одесі й довкола —
+ * лише одна вершина в радіусі ~0.08!), тож спершу перевіряємо райони
+ * (RAIONS) — їхні межі значно детальніші саме там, де це критично для
+ * розкиду вогника. OUTLINE лишається фолбеком для periферії, де райони
+ * ще не завантажені/не покривають точку.
+ */
+export function pointOnLand(point: readonly [number, number]): boolean {
+  for (const region of RAIONS) {
+    if (pointInRing(point, region.ring)) return true;
+  }
+  return pointInRing(point, OUTLINE);
 }
 
 /** Зовнішній контур області — 557 точок. */

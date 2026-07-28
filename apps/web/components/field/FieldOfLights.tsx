@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { OUTLINE, RAIONS, CITIES, FIELD_CX, FIELD_CY, lonLatToField, pointInOutline, type Ring } from "../../lib/odesa-geo";
+import { OUTLINE, RAIONS, CITIES, FIELD_CX, FIELD_CY, lonLatToField, pointOnLand, type Ring } from "../../lib/odesa-geo";
 
 /**
  * Поле вогнів над Одеською областю. Справжня географія: контур області
@@ -205,13 +205,13 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
       const r0 = spread * (0.3 + h2 * 0.7);
       let x = baseX + Math.cos(angle) * r0;
       let y = baseY + Math.sin(angle) * r0 * 0.85;
-      if (!pointInOutline([x, y])) {
+      if (!pointOnLand([x, y])) {
         let placed = false;
         for (let k = 1; k <= 11; k++) {
           const a = angle + (k * Math.PI * 2) / 12;
           const cx = baseX + Math.cos(a) * r0;
           const cy = baseY + Math.sin(a) * r0 * 0.85;
-          if (pointInOutline([cx, cy])) {
+          if (pointOnLand([cx, cy])) {
             x = cx;
             y = cy;
             placed = true;
