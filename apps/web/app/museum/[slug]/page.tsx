@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { mediaUrl } from "../../../lib/api";
 
 export const revalidate = 30;
 
@@ -47,7 +48,7 @@ export default async function ExhibitPage({ params }: { params: Promise<{ slug: 
       </nav>
       {exhibit.coverUrl && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={exhibit.coverUrl} alt="" className="mb-6 aspect-[16/9] w-full rounded-[4px] object-cover" />
+        <img src={mediaUrl(exhibit.coverUrl)!} alt="" className="mb-6 aspect-[16/9] w-full rounded-[4px] object-cover" />
       )}
       <h1 className="font-display text-4xl font-semibold text-cream">{exhibit.title}</h1>
       {exhibit.summary && <p className="mt-4 text-ink">{exhibit.summary}</p>}

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { MediaFrame } from "../../components/blocks/MediaFrame";
 import { Reveal } from "../../components/Reveal";
 import { MEDIA } from "../../lib/media";
+import { mediaUrl } from "../../lib/api";
 
 export const metadata = { title: "Онлайн-музей — Незабутні" };
 export const revalidate = 30;
@@ -77,7 +78,7 @@ export default async function MuseumPage() {
                   {e.coverUrl ? (
                     <MediaFrame
                       caption={`Зала ${String(i + 1).padStart(2, "0")}`}
-                      src={e.coverUrl}
+                      src={mediaUrl(e.coverUrl)!}
                       alt=""
                       aspect="aspect-[16/10]"
                       kenBurns
@@ -120,7 +121,7 @@ export default async function MuseumPage() {
                     {s.coverUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={s.coverUrl}
+                        src={mediaUrl(s.coverUrl)!}
                         alt=""
                         loading="lazy"
                         className="h-24 w-36 flex-none rounded-[3px] object-cover [filter:saturate(0.45)_brightness(0.8)] transition-all duration-500 group-hover:[filter:saturate(0.8)_brightness(1)]"

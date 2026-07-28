@@ -8,7 +8,7 @@ import { ContinueExploring } from "../../../components/blocks/ContinueExploring"
 import { Reveal } from "../../../components/Reveal";
 import { DataUnavailable } from "../../../components/DataUnavailable";
 import { formatDates } from "../../../lib/mock-data";
-import { fetchDefenderByPid } from "../../../lib/api";
+import { fetchDefenderByPid, mediaUrl } from "../../../lib/api";
 
 export const revalidate = 30;
 
@@ -43,7 +43,7 @@ export default async function DefenderProfilePage({
             {defender.portraitUrl ? (
               <MediaFrame
                 caption="Портрет"
-                src={defender.portraitUrl}
+                src={mediaUrl(defender.portraitUrl)!}
                 alt={`Портрет: ${defender.fullName}`}
                 aspect="aspect-[4/5]"
                 kenBurns

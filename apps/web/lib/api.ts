@@ -2,6 +2,17 @@ import type { DefenderSummary } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api/v1";
 
+/**
+ * Бекенд віддає шляхи медіа як "/api/v1/media/file/{id}" — відносно
+ * власного хоста. API_URL уже містить "/api/v1", тож наївна конкатенація
+ * дублює префікс і веде на неіснуючий шлях фронтенду (звідси "фото не
+ * показуються", хоча URL у відповіді API коректний).
+ */
+export function mediaUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  return `${API_URL}${path.replace(/^\/api\/v1/, "")}`;
+}
+
 export interface DefenderDetail extends DefenderSummary {
   bio: string | null;
   candleCount: number;

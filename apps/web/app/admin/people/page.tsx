@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DefenderSummary } from "../../../lib/types";
 import { formatDates } from "../../../lib/mock-data";
 import { authFetch } from "../../../lib/auth-client";
+import { mediaUrl } from "../../../lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api/v1";
 
@@ -69,7 +70,7 @@ export default function AdminPeoplePage() {
     setBirthDate(d.birthDate ?? "");
     setDeathDate(d.deathDate ?? "");
     setBio(d.bio ?? "");
-    setPortraitUrl(d.portraitUrl ?? null);
+    setPortraitUrl(mediaUrl(d.portraitUrl));
   }
 
   async function uploadPortrait(file: File) {

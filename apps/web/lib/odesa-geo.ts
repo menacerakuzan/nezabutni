@@ -30,6 +30,24 @@ export function lonLatToField(lon: number, lat: number): [number, number] {
   return [x, y];
 }
 
+/**
+ * Чи лежить точка (у координатах поля) всередині контуру області.
+ * Потрібно, щоб розкид вогника довкола реальної точки не «випадав» у
+ * море — для прибережних міст (Одеса, Чорноморськ…) випадковий кут
+ * інакше половину разів веде в бік моря.
+ */
+export function pointInOutline(point: readonly [number, number]): boolean {
+  const [x, y] = point;
+  let inside = false;
+  for (let i = 0, j = OUTLINE.length - 1; i < OUTLINE.length; j = i++) {
+    const [xi, yi] = OUTLINE[i]!;
+    const [xj, yj] = OUTLINE[j]!;
+    const intersect = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
 /** Зовнішній контур області — 557 точок. */
 export const OUTLINE: Ring = [
   [0.6362,0.5735],

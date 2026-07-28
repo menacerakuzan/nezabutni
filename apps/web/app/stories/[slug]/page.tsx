@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { mediaUrl } from "../../../lib/api";
 
 export const revalidate = 30;
 
@@ -51,7 +52,7 @@ export default async function StoryPage({ params }: { params: Promise<{ slug: st
       </nav>
       {story.coverUrl && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={story.coverUrl} alt="" className="mb-6 aspect-[16/9] w-full rounded-[4px] object-cover" />
+        <img src={mediaUrl(story.coverUrl)!} alt="" className="mb-6 aspect-[16/9] w-full rounded-[4px] object-cover" />
       )}
       <h1 className="font-display text-4xl font-semibold text-cream">{story.title}</h1>
       {story.summary && <p className="mt-4 text-ink">{story.summary}</p>}

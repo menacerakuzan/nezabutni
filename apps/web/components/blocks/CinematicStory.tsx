@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Reveal } from "../Reveal";
 import { MediaFrame } from "./MediaFrame";
 import { formatDates } from "../../lib/mock-data";
+import { mediaUrl } from "../../lib/api";
 import type { DefenderSummary } from "../../lib/types";
 
 /**
@@ -27,7 +28,7 @@ export function CinematicStory({
             {defender.portraitUrl ? (
               <MediaFrame
                 caption="Портрет"
-                src={defender.portraitUrl}
+                src={mediaUrl(defender.portraitUrl)!}
                 alt={`Портрет: ${defender.fullName}`}
                 aspect="aspect-[5/6]"
                 kenBurns

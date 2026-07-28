@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Reveal } from "../../components/Reveal";
 import { formatDates } from "../../lib/mock-data";
 import { DataUnavailable } from "../../components/DataUnavailable";
-import { fetchDefenders } from "../../lib/api";
+import { fetchDefenders, mediaUrl } from "../../lib/api";
 
 export const metadata = { title: "Реєстр імен — Незабутні" };
 export const revalidate = 30;
@@ -61,7 +61,7 @@ export default async function DefendersPage() {
               >
                 {d.portraitUrl ? (
                   <img
-                    src={d.portraitUrl}
+                    src={mediaUrl(d.portraitUrl)!}
                     alt=""
                     loading="lazy"
                     className="h-20 w-20 flex-none rounded-[3px] object-cover [filter:saturate(0.4)_contrast(1.05)_brightness(0.85)] transition-all duration-500 group-hover:[filter:saturate(0.8)_contrast(1.05)_brightness(1)]"

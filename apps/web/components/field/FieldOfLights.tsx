@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { OUTLINE, RAIONS, CITIES, FIELD_CX, FIELD_CY, lonLatToField, type Ring } from "../../lib/odesa-geo";
+import { OUTLINE, RAIONS, CITIES, FIELD_CX, FIELD_CY, lonLatToField, pointInOutline, type Ring } from "../../lib/odesa-geo";
 
 /**
  * Поле вогнів над Одеською областю. Справжня географія: контур області
@@ -198,14 +198,40 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
         spread = city === odesa ? 0.05 : 0.03;
       }
 
+      // Випадковий кут для прибережного міста (Ізмаїл, Кілія, Южне,
+      // Болград…) чи прибережної реальної точки часто веде в море —
+      // перебираємо кут, поки розкид не влучить у контур області; якщо
+      // геть не вдалось (тісний закуток берега), лишаємо точку без розкиду.
+      const r0 = spread * (0.3 + h2 * 0.7);
+      let x = baseX + Math.cos(angle) * r0;
+      let y = baseY + Math.sin(angle) * r0 * 0.85;
+      if (!pointInOutline([x, y])) {
+        let placed = false;
+        for (let k = 1; k <= 11; k++) {
+          const a = angle + (k * Math.PI * 2) / 12;
+          const cx = baseX + Math.cos(a) * r0;
+          const cy = baseY + Math.sin(a) * r0 * 0.85;
+          if (pointInOutline([cx, cy])) {
+            x = cx;
+            y = cy;
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) {
+          x = baseX;
+          y = baseY;
+        }
+      }
+
       return {
         id: `real-${r.pid}`,
         pid: r.pid,
         name: r.name,
         years: r.years,
         cluster: r.region ?? odesa.name,
-        x: baseX + Math.cos(angle) * spread * (0.3 + h2 * 0.7),
-        y: baseY + Math.sin(angle) * spread * (0.3 + h2 * 0.7) * 0.85,
+        x,
+        y,
         phase: h1 * Math.PI * 2,
         size: 1.7,
       };
