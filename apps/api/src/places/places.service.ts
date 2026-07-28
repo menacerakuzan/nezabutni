@@ -47,7 +47,9 @@ export class PlacesService {
   // Геометрія — PostGIS geography, недоступна для звичайного Prisma Client
   // (Unsupported("geography(...)")), тому працюємо через $queryRaw + ST_X/ST_Y.
   async list(layer?: string, bbox?: string) {
-    const conditions: string[] = [`p.status = 'published'`, `p.geom_point IS NOT NULL`];
+    // settlement — службовий тип (джерело координат для Поля вогнів за місцем
+    // народження), на карті пам'яті не показується.
+    const conditions: string[] = [`p.status = 'published'`, `p.geom_point IS NOT NULL`, `p.type != 'settlement'`];
     const params: any[] = [];
 
     if (layer) {
@@ -102,7 +104,7 @@ export class PlacesService {
               ST_X(p.geom_point::geometry) as lon, ST_Y(p.geom_point::geometry) as lat
        FROM "place" p
        LEFT JOIN "region" r ON r.id = p.region_id
-       WHERE p.geom_point IS NOT NULL
+       WHERE p.geom_point IS NOT NULL AND p.type != 'settlement'
        ORDER BY p.created_at DESC`,
     );
     return rows;

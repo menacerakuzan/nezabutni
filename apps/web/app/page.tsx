@@ -45,7 +45,7 @@ const DEFAULT_PATHS = [
 
 export default async function HomePage() {
   const [defendersResult, statsResult, blocksResult] = await Promise.all([
-    fetchDefenders(),
+    fetchDefenders({ limit: 1000 }),
     fetchStats(),
     fetchPageBlocks("home"),
   ]);

@@ -52,6 +52,9 @@ enum PlaceType {
   monument
   museum_site
   frontline_segment
+  /// Населений пункт (місце народження тощо) — джерело координат для
+  /// Поля вогнів, свідомо не показується на карті пам'яті/в адмінці місць.
+  settlement
 
   @@map("place_type")
 }

@@ -1,7 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
 import { Reveal } from "../../components/Reveal";
-import { portraitFor } from "../../lib/media";
 import { formatDates } from "../../lib/mock-data";
 import { DataUnavailable } from "../../components/DataUnavailable";
 import { fetchDefenders } from "../../lib/api";
@@ -10,7 +9,7 @@ export const metadata = { title: "Реєстр імен — Незабутні" 
 export const revalidate = 30;
 
 export default async function DefendersPage() {
-  const result = await fetchDefenders();
+  const result = await fetchDefenders({ limit: 1000 });
   const defenders = result.ok ? result.data : [];
 
   return (
@@ -60,12 +59,16 @@ export default async function DefendersPage() {
                 href={`/defenders/${d.pid}`}
                 className="group flex items-center justify-between gap-6 border-b border-hair py-8"
               >
-                <img
-                  src={portraitFor(d.pid)}
-                  alt=""
-                  loading="lazy"
-                  className="h-20 w-20 flex-none rounded-[3px] object-cover [filter:saturate(0.4)_contrast(1.05)_brightness(0.85)] transition-all duration-500 group-hover:[filter:saturate(0.8)_contrast(1.05)_brightness(1)]"
-                />
+                {d.portraitUrl ? (
+                  <img
+                    src={d.portraitUrl}
+                    alt=""
+                    loading="lazy"
+                    className="h-20 w-20 flex-none rounded-[3px] object-cover [filter:saturate(0.4)_contrast(1.05)_brightness(0.85)] transition-all duration-500 group-hover:[filter:saturate(0.8)_contrast(1.05)_brightness(1)]"
+                  />
+                ) : (
+                  <div className="h-20 w-20 flex-none rounded-[3px] border border-hair bg-white/[0.02]" />
+                )}
                 <div className="min-w-0 flex-1">
                   <h2 className="font-display text-3xl font-semibold uppercase leading-tight text-ink-lo transition-colors duration-300 group-hover:text-cream md:text-5xl">
                     {d.fullName}

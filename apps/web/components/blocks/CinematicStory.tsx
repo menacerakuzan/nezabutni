@@ -2,7 +2,6 @@ import Link from "next/link";
 import { Reveal } from "../Reveal";
 import { MediaFrame } from "./MediaFrame";
 import { formatDates } from "../../lib/mock-data";
-import { portraitFor } from "../../lib/media";
 import type { DefenderSummary } from "../../lib/types";
 
 /**
@@ -25,13 +24,19 @@ export function CinematicStory({
       >
         <Reveal className={flip ? "lg:order-2" : ""}>
           <Link href={`/defenders/${defender.pid}`} className="group block">
-            <MediaFrame
-              caption="Портрет · родинний архів (демо)"
-              src={portraitFor(defender.pid)}
-              alt={`Демонстраційний портрет: ${defender.fullName}`}
-              aspect="aspect-[5/6]"
-              kenBurns
-            />
+            {defender.portraitUrl ? (
+              <MediaFrame
+                caption="Портрет"
+                src={defender.portraitUrl}
+                alt={`Портрет: ${defender.fullName}`}
+                aspect="aspect-[5/6]"
+                kenBurns
+              />
+            ) : (
+              <div className="flex aspect-[5/6] items-center justify-center rounded-[4px] border border-hair bg-white/[0.02]">
+                <p className="px-6 text-center text-sm text-ink-faint">Портрет ще не додано</p>
+              </div>
+            )}
           </Link>
         </Reveal>
 

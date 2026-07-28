@@ -55,24 +55,29 @@ export class DefendersService {
   }
 
   /**
-   * Координати місця, найтісніше повʼязаного з захисником: перший запис
-   * defender_place_role (поховання/бій/служба), сортований так, щоб
-   * "поховано" й "загинув" мали пріоритет над просто "служив". Один
-   * запит на весь список — без N+1.
+   * Координати місця, найтісніше повʼязаного з захисником: поховання й
+   * загибель (defender_place_role) мають пріоритет над просто "служив",
+   * а місце народження (birth_place_id) — це фолбек в останню чергу,
+   * коли інших звʼязок немає. Один запит на весь список — без N+1.
    */
   private async coordsByDefenderId(defenderIds: string[]): Promise<Map<string, { lon: number; lat: number }>> {
     if (!defenderIds.length) return new Map();
-    const rows = await this.prisma.$queryRaw<{ defender_id: string; lon: number; lat: number; role: string }[]>`
-      SELECT DISTINCT ON (dpr.defender_id)
-             dpr.defender_id,
-             ST_X(p.geom_point::geometry) AS lon,
-             ST_Y(p.geom_point::geometry) AS lat,
-             dpr.role
-      FROM defender_place_role dpr
-      JOIN place p ON p.id = dpr.place_id
-      WHERE dpr.defender_id = ANY(${defenderIds}::uuid[]) AND p.geom_point IS NOT NULL
-      ORDER BY dpr.defender_id,
-               CASE dpr.role WHEN 'buried_at' THEN 0 WHEN 'died_at' THEN 1 ELSE 2 END
+    const rows = await this.prisma.$queryRaw<{ defender_id: string; lon: number; lat: number }[]>`
+      SELECT DISTINCT ON (id) id AS defender_id, lon, lat FROM (
+        SELECT dpr.defender_id AS id,
+               ST_X(p.geom_point::geometry) AS lon,
+               ST_Y(p.geom_point::geometry) AS lat,
+               CASE dpr.role WHEN 'buried_at' THEN 0 WHEN 'died_at' THEN 1 ELSE 2 END AS priority
+        FROM defender_place_role dpr
+        JOIN place p ON p.id = dpr.place_id
+        WHERE dpr.defender_id = ANY(${defenderIds}::uuid[]) AND p.geom_point IS NOT NULL
+        UNION ALL
+        SELECT d.id, ST_X(p.geom_point::geometry), ST_Y(p.geom_point::geometry), 3
+        FROM defender d
+        JOIN place p ON p.id = d.birth_place_id
+        WHERE d.id = ANY(${defenderIds}::uuid[]) AND p.geom_point IS NOT NULL
+      ) combined
+      ORDER BY id, priority
     `;
     return new Map(rows.map((r) => [r.defender_id, { lon: Number(r.lon), lat: Number(r.lat) }]));
   }

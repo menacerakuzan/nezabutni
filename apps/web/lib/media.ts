@@ -28,14 +28,4 @@ export const MEDIA = {
   archiveTable: px(355713),          // старі листи й фотографії на столі
   lettersString: px(1157151),        // стос листів, перев’язаний мотузкою
   letterPhoto: px(5207503),          // листи поруч із ч/б фото
-
-  // Демо-портрети (вигадані персонажі мок-даних)
-  portraits: [px(2415939, 900), px(7468063, 900), px(10895248, 900), px(34730256, 900)],
 } as const;
-
-/** Детерміновано підібрати демо-портрет за PID. */
-export function portraitFor(pid: string): string {
-  let h = 0;
-  for (let i = 0; i < pid.length; i++) h = (h * 31 + pid.charCodeAt(i)) >>> 0;
-  return MEDIA.portraits[h % MEDIA.portraits.length]!;
-}

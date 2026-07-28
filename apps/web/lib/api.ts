@@ -33,11 +33,13 @@ export async function fetchDefenders(params?: {
   q?: string;
   unitId?: string;
   regionId?: string;
+  limit?: number;
 }): Promise<Result<DefenderSummary[]>> {
   const qs = new URLSearchParams();
   if (params?.q) qs.set("q", params.q);
   if (params?.unitId) qs.set("unit_id", params.unitId);
   if (params?.regionId) qs.set("region_id", params.regionId);
+  if (params?.limit) qs.set("limit", String(params.limit));
 
   const r = await get<{ items: DefenderSummary[] }>(`/defenders?${qs.toString()}`);
   return r.ok ? { ok: true, data: r.data.items } : r;
