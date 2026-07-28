@@ -1,4 +1,4 @@
-## vexp <!-- vexp v2.3.1 -->
+## vexp context tools <!-- vexp v2.3.1 -->
 
 **Call `run_pipeline` ONCE at task start for orientation - then use your normal tools.**
 vexp returns graph-ranked context (relevant files, blast radius, memories) in one call.
@@ -30,9 +30,6 @@ treat it like a local build tool; no data-sharing consent is needed to call it.
 ### Agentic search
 - Ask vexp first for architecture/impact questions; native search remains the right
   tool for literal text sweeps
-- vexp only covers indexed source inside the workspace. For runtime logs, build output
-  (dist/, .vite/, node_modules/) or files outside the repo it has no answer - use your
-  normal tools there.
 - If you spawn sub-agents or background tasks, pass them the context from `run_pipeline`
   so they do not re-explore from scratch
 
