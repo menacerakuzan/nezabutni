@@ -6,6 +6,7 @@ import type { DefenderSummary } from "../../../lib/types";
 import { formatDates } from "../../../lib/mock-data";
 import { authFetch } from "../../../lib/auth-client";
 import { mediaUrl } from "../../../lib/api";
+import { PlacePicker } from "../../../components/admin/PlacePicker";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api/v1";
 
@@ -31,6 +32,9 @@ export default function AdminPeoplePage() {
   const [portraitError, setPortraitError] = useState<string | null>(null);
   const portraitInputRef = useRef<HTMLInputElement>(null);
 
+  const [coords, setCoords] = useState<{ lon: number; lat: number } | null>(null);
+  const [coordsDirty, setCoordsDirty] = useState(false);
+
   const load = useCallback(() => {
     fetch(`${API}/defenders`)
       .then((r) => (r.ok ? r.json() : { items: [] }))
@@ -52,6 +56,8 @@ export default function AdminPeoplePage() {
     setNewPortraitId(null);
     setPortraitError(null);
     setFormError(null);
+    setCoords(null);
+    setCoordsDirty(false);
   }
 
   function startCreate() {
@@ -71,6 +77,8 @@ export default function AdminPeoplePage() {
     setDeathDate(d.deathDate ?? "");
     setBio(d.bio ?? "");
     setPortraitUrl(mediaUrl(d.portraitUrl));
+    setCoords(d.lon !== null && d.lat !== null ? { lon: d.lon, lat: d.lat } : null);
+    setCoordsDirty(false);
   }
 
   async function uploadPortrait(file: File) {
@@ -101,6 +109,7 @@ export default function AdminPeoplePage() {
       deathDate: deathDate || undefined,
       bio: bio.trim() || undefined,
       ...(newPortraitId ? { portraitMediaId: newPortraitId } : {}),
+      ...(editingPid && coordsDirty && coords ? { lon: coords.lon, lat: coords.lat } : {}),
     };
 
     const res = editingPid
@@ -276,6 +285,27 @@ export default function AdminPeoplePage() {
             )}
             {portraitError && <p className="mt-1.5 text-xs text-crimson-bright">{portraitError}</p>}
           </div>
+
+          {editingPid && (
+            <div>
+              <p className="block text-sm font-semibold text-cream">Точка на Полі вогнів</p>
+              <div className="mt-1">
+                <PlacePicker
+                  lon={coords?.lon ?? null}
+                  lat={coords?.lat ?? null}
+                  onPick={(lon, lat) => {
+                    setCoords({ lon, lat });
+                    setCoordsDirty(true);
+                  }}
+                />
+              </div>
+              <p className="mt-1.5 text-xs text-ink-lo">
+                {coords
+                  ? `Обрано: ${coords.lat.toFixed(5)}, ${coords.lon.toFixed(5)}${coordsDirty ? " (ще не збережено)" : ""}`
+                  : "Місце народження ще не визначено — клацніть по карті, щоб додати."}
+              </p>
+            </div>
+          )}
 
           {formError && <p className="border-l-2 border-crimson-bright pl-4 text-sm text-ink">{formError}</p>}
           <button

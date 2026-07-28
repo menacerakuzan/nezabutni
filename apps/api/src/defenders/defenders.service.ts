@@ -198,11 +198,24 @@ export class DefendersService {
   /** Адмінське редагування вже створеного запису — ім'я, дати, біо, портрет. */
   async update(
     pid: string,
-    dto: { fullName?: string; birthDate?: string; deathDate?: string; bio?: string; portraitMediaId?: string },
+    dto: {
+      fullName?: string;
+      birthDate?: string;
+      deathDate?: string;
+      bio?: string;
+      portraitMediaId?: string;
+      lon?: number;
+      lat?: number;
+    },
     actorId: string,
   ) {
     const existing = await this.prisma.defender.findUnique({ where: { pid } });
     if (!existing) throw new NotFoundException({ code: "not_found", message: "Захисника не знайдено" });
+
+    let birthPlaceId: string | undefined;
+    if (dto.lon !== undefined && dto.lat !== undefined) {
+      birthPlaceId = await this.setBirthPoint(existing.id, existing.birthPlaceId, existing.fullName, dto.lon, dto.lat);
+    }
 
     const defender = await this.prisma.defender.update({
       where: { pid },
@@ -213,10 +226,48 @@ export class DefendersService {
         deathDate: dto.deathDate ? new Date(dto.deathDate) : undefined,
         bio: dto.bio,
         portraitMediaId: dto.portraitMediaId,
+        birthPlaceId,
       },
     });
     await this.audit.log({ actorId, action: "defender.update", entityType: "defender", entityId: defender.id, diff: dto });
     return this.toSummary(defender);
+  }
+
+  /**
+   * Точка на Полі вогнів — адмінське ручне виправлення. Місце народження
+   * часто спільне (десятки людей з "Одеса" вказують на той самий place
+   * після геокодингу) — рухати його напряму означало б зсунути точку й
+   * усім іншим. Тож рухаємо geom_point тільки якщо це місце належить
+   * винятково цьому захиснику; інакше створюємо окрему точку саме для нього.
+   */
+  private async setBirthPoint(
+    defenderId: string,
+    currentPlaceId: string | null,
+    fullName: string,
+    lon: number,
+    lat: number,
+  ): Promise<string> {
+    let placeId = currentPlaceId;
+    if (placeId) {
+      const otherOwners = await this.prisma.defender.count({
+        where: { birthPlaceId: placeId, id: { not: defenderId } },
+      });
+      if (otherOwners > 0) placeId = null;
+    }
+    if (!placeId) {
+      placeId = (
+        await this.prisma.place.create({
+          data: { type: "settlement", name: `Місце народження: ${fullName}`, status: "published" },
+        })
+      ).id;
+    }
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "place" SET "geom_point" = ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography WHERE "id" = $3::uuid`,
+      lon,
+      lat,
+      placeId,
+    );
+    return placeId;
   }
 
   /**

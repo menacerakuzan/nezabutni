@@ -1,4 +1,4 @@
-import { IsDateString, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
+import { IsDateString, IsLatitude, IsLongitude, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
 
 export class UpdateDefenderDto {
   @IsString()
@@ -21,4 +21,14 @@ export class UpdateDefenderDto {
   @IsUUID()
   @IsOptional()
   portraitMediaId?: string;
+
+  // Точка на Полі вогнів (місце народження) — адмін може виправити
+  // вручну, якщо автогеокодинг за текстом біографії помилився.
+  @IsLongitude()
+  @IsOptional()
+  lon?: number;
+
+  @IsLatitude()
+  @IsOptional()
+  lat?: number;
 }

@@ -723,12 +723,10 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
       if (wasDrag) return;
       const rect = canvas.getBoundingClientRect();
       const hit = nearest(e.clientX - rect.left, e.clientY - rect.top);
-      if (hit) {
-        setSelected(hit);
-        targetRef.current = { x: hit.x + 0.02, y: hit.y, z: Math.max(targetRef.current.z, 7.5) };
-      } else {
-        setSelected(null);
-      }
+      // Картка вогника — фіксована панель, її не треба центрувати камерою;
+      // примусовий переліт+зум при кліку лише збивав з пантелику ("кудись
+      // несе"). Клік просто відкриває картку, вид лишається на місці.
+      setSelected(hit);
     };
 
     canvas.addEventListener("wheel", onWheel, { passive: false });
