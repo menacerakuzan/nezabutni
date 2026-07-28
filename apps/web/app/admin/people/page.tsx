@@ -36,7 +36,7 @@ export default function AdminPeoplePage() {
   const [coordsDirty, setCoordsDirty] = useState(false);
 
   const load = useCallback(() => {
-    fetch(`${API}/defenders`)
+    fetch(`${API}/defenders?limit=1000`)
       .then((r) => (r.ok ? r.json() : { items: [] }))
       .then((d) => setItems(d.items ?? []))
       .catch(() => setError(true));
