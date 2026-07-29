@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { ChapterIntro } from "./ChapterIntro";
 import { CinematicStory } from "./CinematicStory";
 import type { DefenderSummary } from "../../lib/types";
@@ -16,23 +19,42 @@ const D: Required<CinematicStoriesProps> = {
   lead: "Кожну сторінку тут створюють рідні й побратими. Це їхні слова та їхня пам’ять.",
 };
 
+function pickRandom(defenders: DefenderSummary[], n: number): DefenderSummary[] {
+  const pool = [...defenders];
+  const picked: DefenderSummary[] = [];
+  while (picked.length < n && pool.length > 0) {
+    const i = Math.floor(Math.random() * pool.length);
+    picked.push(pool.splice(i, 1)[0]!);
+  }
+  return picked;
+}
+
 /**
- * Зал II: дві останні історії з реєстру. Текст заголовка редагується
- * в /admin/pages; самі історії — завжди реальні записи з БД.
+ * Зал II: 3 випадкові історії з реєстру — інші при кожному заході, а не
+ * завжди ті самі перші за датою. Вибір — на клієнті (useEffect), щоб
+ * справді відрізнявся щоразу, а не лише раз на ISR-цикл кешування.
  */
 export function CinematicStories({
   defenders,
   ...props
 }: CinematicStoriesProps & { defenders: DefenderSummary[] }) {
   const p = { ...D, ...props };
-  const [featured, second] = defenders;
-  if (!featured) return null;
+  // До монтування — перші за датою (детерміновано, без розбіжності SSR/клієнт).
+  const [shown, setShown] = useState<DefenderSummary[]>(() => defenders.slice(0, 3));
+
+  useEffect(() => {
+    if (defenders.length > 3) setShown(pickRandom(defenders, 3));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (shown.length === 0) return null;
 
   return (
     <>
       <ChapterIntro index={p.index} kicker={p.kicker} title={p.title} lead={p.lead} />
-      <CinematicStory defender={featured} />
-      {second && <CinematicStory defender={second} flip />}
+      {shown.map((d, i) => (
+        <CinematicStory key={d.pid} defender={d} flip={i % 2 === 1} />
+      ))}
     </>
   );
 }
