@@ -54,6 +54,10 @@
 html {
   scroll-behavior: smooth;
   background: #09090c;
+  /* Базовий розмір шрифту навмисно збільшено (як у режимі доступності
+     "1" нижче) — редакційна типографіка (text-sm/text-xs) читалась
+     задрібно на звичайних екранах. */
+  font-size: 112.5%;
 }
 
 body {
@@ -187,10 +191,11 @@ html[data-a11y-links] a {
   color: #eab868 !important;
 }
 html[data-a11y-textsize="1"] {
-  font-size: 112.5%;
+  /* Базовий розмір сам по собі вже 112.5% — тут даємо помітний крок далі. */
+  font-size: 125%;
 }
 html[data-a11y-textsize="2"] {
-  font-size: 127%;
+  font-size: 145%;
 }
 html[data-a11y-lineheight] body :is(p, li, a, span, h1, h2, h3, h4, blockquote, td, label) {
   line-height: 1.9 !important;

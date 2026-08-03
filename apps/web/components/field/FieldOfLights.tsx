@@ -554,19 +554,20 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
 
         // Дихання вічного вогню: три несинхронні гармоніки плюс власний темп
         // у кожного вогника — тому поле мерехтить нерівно, як живе полум’я,
-        // а не пульсує в такт.
+        // а не пульсує в такт. Раніше цикл був ~12с — на око майже не
+        // помітно; тепер помітно з першого погляду, лишаючись органічним.
         const ph = l.phase;
         const spd = 0.72 + (ph % 1) * 0.62; // власна швидкість вогника
         const flicker = reduceRef.current
           ? 1
-          : 0.76 +
-            0.15 * Math.sin(time * 0.55 * spd + ph) +
-            0.09 * Math.sin(time * 1.07 * spd + ph * 2.3) +
-            0.05 * Math.sin(time * 2.13 * spd + ph * 0.7);
+          : 0.7 +
+            0.22 * Math.sin(time * 1.8 * spd + ph) +
+            0.12 * Math.sin(time * 3.6 * spd + ph * 2.3) +
+            0.08 * Math.sin(time * 6.5 * spd + ph * 0.7);
 
         const breath = reduceRef.current
           ? 1
-          : 1 + 0.15 * Math.sin(time * 0.5 * spd + ph * 1.7);
+          : 1 + 0.2 * Math.sin(time * 1.6 * spd + ph * 1.7);
         // Зростання розміру обмежене: зблизька вогники лишаються свічками,
         // а не перетворюються на прожектори.
         const zScale = 1.1 + Math.min(cam.z, 5.5) * 0.42;
