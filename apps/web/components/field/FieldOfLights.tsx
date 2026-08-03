@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { OUTLINE, RAIONS, CITIES, FIELD_CX, FIELD_CY, lonLatToField, pointOnLand, type Ring } from "../../lib/odesa-geo";
+import { OUTLINE, RAIONS, CITIES, ZMIINYI_ISLAND, FIELD_CX, FIELD_CY, lonLatToField, pointOnLand, type Ring } from "../../lib/odesa-geo";
 
 /**
  * Поле вогнів над Одеською областю. Справжня географія: контур області
@@ -145,7 +145,7 @@ function makeGlowSprite(warm: boolean): HTMLCanvasElement {
   return c;
 }
 
-export function FieldOfLights({ real }: { real: RealLight[] }) {
+export function FieldOfLights({ real, focusPid }: { real: RealLight[]; focusPid?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const camRef = useRef<Cam>({ x: FIELD_CX, y: FIELD_CY, z: 0.9 });
@@ -239,6 +239,17 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
   }, [real]);
 
   const total = lights.length;
+
+  // Перехід сюди зі сторінки конкретного захисника ("Місця його шляху") —
+  // одразу летимо й обираємо саме його вогник, а не показуємо загальне поле.
+  useEffect(() => {
+    if (!focusPid) return;
+    const light = lights.find((l) => l.pid === focusPid);
+    if (!light) return;
+    setSelected(light);
+    targetRef.current = { x: light.x + 0.02, y: light.y, z: 7.5 };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusPid, lights]);
 
   const toScreen = useCallback((l: { x: number; y: number }, cam: Cam, w: number, h: number) => {
     const s = Math.min(w, h) * cam.z;
@@ -485,6 +496,33 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
         });
       }
 
+      // острів Зміїний — завжди видимий, окремим значком (не місто й не вогник)
+      {
+        const p = toScreen(ZMIINYI_ISLAND, cam, w, h);
+        if (p.x > -80 && p.x < w + 80 && p.y > -20 && p.y < h + 20) {
+          ctx.save();
+          ctx.strokeStyle = "rgba(251,243,233,0.85)";
+          ctx.fillStyle = "rgba(251,243,233,0.55)";
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y - 4.5);
+          ctx.lineTo(p.x + 4.5, p.y + 3.5);
+          ctx.lineTo(p.x - 4.5, p.y + 3.5);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+          labels.push({
+            text: ZMIINYI_ISLAND.name,
+            x: p.x + 9,
+            y: p.y + 4,
+            font: "600 12px var(--font-odesa), sans-serif",
+            color: "rgba(251,243,233,0.85)",
+            prio: 1,
+          });
+        }
+      }
+
       // назви районів — доки не з’явилися громади
       const raionTextA = clamp01((cam.z - 1.15) / 0.5) * clamp01((4.6 - cam.z) / 1.1) * 0.55;
       if (raionTextA > 0.02) {
@@ -554,16 +592,16 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
 
         // Дихання вічного вогню: три несинхронні гармоніки плюс власний темп
         // у кожного вогника — тому поле мерехтить нерівно, як живе полум’я,
-        // а не пульсує в такт. Раніше цикл був ~12с — на око майже не
-        // помітно; тепер помітно з першого погляду, лишаючись органічним.
+        // а не пульсує в такт. Амплітуда навмисно велика — вогник справді
+        // гасне до нуля й розгорається знову, а не просто тьмяніє.
         const ph = l.phase;
         const spd = 0.72 + (ph % 1) * 0.62; // власна швидкість вогника
-        const flicker = reduceRef.current
-          ? 1
-          : 0.7 +
-            0.22 * Math.sin(time * 1.8 * spd + ph) +
-            0.12 * Math.sin(time * 3.6 * spd + ph * 2.3) +
-            0.08 * Math.sin(time * 6.5 * spd + ph * 0.7);
+        const flickerRaw =
+          0.5 +
+          0.42 * Math.sin(time * 1.4 * spd + ph) +
+          0.09 * Math.sin(time * 3.1 * spd + ph * 2.3) +
+          0.06 * Math.sin(time * 5.4 * spd + ph * 0.9);
+        const flicker = reduceRef.current ? 1 : Math.max(0, flickerRaw);
 
         const breath = reduceRef.current
           ? 1
@@ -841,9 +879,8 @@ export function FieldOfLights({ real }: { real: RealLight[] }) {
         <div className="rounded-[3px] border border-hair bg-[#0A0C12]/90 px-4 py-3">
           <p className="text-xs font-medium text-cream">
             <span className="mr-2 inline-block h-2 w-2 rounded-full bg-gold align-middle shadow-[0_0_6px_rgba(223,155,59,0.9)]" />
-            Один вогник — одна людина
+            Мапа Одеської області · вогні над рідними містами
           </p>
-          <p className="mt-1 text-xs text-ink-lo">Мапа Одеської області · вогні над рідними містами</p>
         </div>
         <p className="mt-3 text-xs text-ink-lo">
           Тягніть, щоб рухатися · ⌘/Ctrl + колесо або подвійний клік — наближення

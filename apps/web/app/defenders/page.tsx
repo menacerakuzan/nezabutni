@@ -3,19 +3,28 @@ import Link from "next/link";
 import { Reveal } from "../../components/Reveal";
 import { formatDates } from "../../lib/mock-data";
 import { DataUnavailable } from "../../components/DataUnavailable";
-import { fetchDefenders, mediaUrl } from "../../lib/api";
+import { fetchDefenders, fetchFacets, mediaUrl } from "../../lib/api";
 
 export const metadata = { title: "Реєстр імен — Незабутні" };
 export const revalidate = 30;
 
-export default async function DefendersPage() {
-  const result = await fetchDefenders({ limit: 1000 });
+export default async function DefendersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; unit_id?: string; region_id?: string }>;
+}) {
+  const { q, unit_id: unitId, region_id: regionId } = await searchParams;
+  const [result, facets] = await Promise.all([
+    fetchDefenders({ q, unitId, regionId, limit: 1000 }),
+    fetchFacets(),
+  ]);
   const defenders = result.ok ? result.data : [];
+  const hasFilters = Boolean(q || unitId || regionId);
 
   return (
     <>
       {/* Титр залу */}
-      <section className="mx-auto max-w-6xl px-6 pb-14 pt-36">
+      <section className="mx-auto max-w-6xl px-6 pb-10 pt-36">
         <Reveal>
           <span className="caption">Стіна пам’яті</span>
           <h1 className="mt-6 font-display text-6xl font-semibold leading-[0.95] text-cream md:text-8xl">
@@ -28,17 +37,66 @@ export default async function DefendersPage() {
         </Reveal>
 
         <Reveal delay={0.1}>
-          <form action="/search" method="get" className="mt-10 flex max-w-lg items-center gap-3 border-b border-hair-strong pb-3">
-            <input
-              type="search"
-              name="q"
-              placeholder="Знайти за прізвищем чи іменем…"
-              aria-label="Пошук за іменем"
-              className="flex-1 border-0 bg-transparent px-0 text-lg text-cream placeholder:text-ink-faint focus:outline-none"
-            />
-            <button type="submit" className="text-sm text-gold transition-colors hover:text-gold-soft">
-              Знайти →
-            </button>
+          <form action="/defenders" method="get" className="mt-10 max-w-2xl">
+            <div className="flex items-center gap-3 border-b border-hair-strong pb-3">
+              <input
+                type="search"
+                name="q"
+                defaultValue={q ?? ""}
+                placeholder="Знайти за прізвищем чи іменем…"
+                aria-label="Пошук за іменем"
+                className="flex-1 border-0 bg-transparent px-0 text-lg text-cream placeholder:text-ink-faint focus:outline-none"
+              />
+            </div>
+            <div className="mt-4 flex flex-wrap items-end gap-4">
+              <div>
+                <label htmlFor="f-unit" className="block text-xs text-ink-lo">
+                  Частина
+                </label>
+                <select
+                  id="f-unit"
+                  name="unit_id"
+                  defaultValue={unitId ?? ""}
+                  className="mt-1 min-w-[220px] rounded-[3px] border border-hair bg-transparent px-2 py-2 text-sm text-cream"
+                >
+                  <option value="">Усі частини</option>
+                  {facets.units.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="f-region" className="block text-xs text-ink-lo">
+                  Район (за місцем народження)
+                </label>
+                <select
+                  id="f-region"
+                  name="region_id"
+                  defaultValue={regionId ?? ""}
+                  className="mt-1 min-w-[200px] rounded-[3px] border border-hair bg-transparent px-2 py-2 text-sm text-cream"
+                >
+                  <option value="">Усі райони</option>
+                  {facets.regions.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="submit"
+                className="rounded-[3px] bg-cream px-5 py-2 text-sm font-semibold text-void hover:bg-white"
+              >
+                Знайти →
+              </button>
+              {hasFilters && (
+                <Link href="/defenders" className="text-sm text-ink-lo hover:text-cream">
+                  Скинути фільтри
+                </Link>
+              )}
+            </div>
           </form>
         </Reveal>
       </section>
@@ -48,9 +106,18 @@ export default async function DefendersPage() {
         {!result.ok && <DataUnavailable />}
         {result.ok && defenders.length === 0 && (
           <DataUnavailable
-            title="У реєстрі поки немає імен"
-            hint="Щойно родини подадуть перші історії й модератори їх звірять, імена з’являться тут."
+            title={hasFilters ? "За цим фільтром нікого не знайдено" : "У реєстрі поки немає імен"}
+            hint={
+              hasFilters
+                ? "Спробуйте змінити або скинути фільтри."
+                : "Щойно родини подадуть перші історії й модератори їх звірять, імена з’являться тут."
+            }
           />
+        )}
+        {result.ok && defenders.length > 0 && (
+          <p className="border-t border-hair pt-4 text-xs text-ink-lo">
+            {defenders.length} {hasFilters ? "знайдено" : "у реєстрі"}
+          </p>
         )}
         <ul className="border-t border-hair">
           {defenders.map((d, i) => (
@@ -76,6 +143,7 @@ export default async function DefendersPage() {
                   <p className="mt-2 text-sm text-ink-lo">
                     {formatDates(d.birthDate, d.deathDate)}
                     {d.unitName ? ` · ${d.unitName}` : ""}
+                    {d.regionName ? ` · ${d.regionName} район` : ""}
                   </p>
                 </div>
                 <span className="hidden shrink-0 items-center gap-2 text-sm text-ink-faint transition-all duration-300 group-hover:gap-3 group-hover:text-gold md:inline-flex">

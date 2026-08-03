@@ -43,8 +43,13 @@ const DEFAULT_PATHS = [
   { href: "/submissions/new", index: "→", title: "Подати ім’я", note: "Додати історію захисника" },
 ];
 
-export default async function HomePage() {
-  const [defendersResult, statsResult, blocksResult] = await Promise.all([
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ focus?: string }>;
+}) {
+  const [{ focus }, defendersResult, statsResult, blocksResult] = await Promise.all([
+    searchParams,
     fetchDefenders({ limit: 1000 }),
     fetchStats(),
     fetchPageBlocks("home"),
@@ -65,7 +70,7 @@ export default async function HomePage() {
   return (
     <>
       {blocks.map((block) => (
-        <HomeBlock key={block.id} block={block} latest={latest} totalStats={stats?.total} />
+        <HomeBlock key={block.id} block={block} latest={latest} totalStats={stats?.total} focusPid={focus} />
       ))}
     </>
   );
@@ -75,10 +80,12 @@ function HomeBlock({
   block,
   latest,
   totalStats,
+  focusPid,
 }: {
   block: PageBlockDto;
   latest: DefenderSummary[];
   totalStats?: number;
+  focusPid?: string;
 }) {
   const props = block.props ?? {};
 
@@ -86,6 +93,7 @@ function HomeBlock({
     case "FieldOfLights":
       return (
         <FieldOfLights
+          focusPid={focusPid}
           real={latest.map((d) => ({
             pid: d.pid,
             name: d.fullName,

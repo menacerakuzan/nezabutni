@@ -117,7 +117,12 @@ export default async function DefenderProfilePage({
       {/* Маршрут далі */}
       <ContinueExploring
         paths={[
-          { href: "/map", index: "→", title: "Місця його шляху", note: "Карта пам’яті регіону" },
+          {
+            href: `/?focus=${encodeURIComponent(defender.pid)}`,
+            index: "→",
+            title: "Його вогник на Полі",
+            note: "Знайти серед усіх імен",
+          },
           { href: "/museum", index: "→", title: "Онлайн-музей", note: "Експонати й документи" },
           { href: "/defenders", index: "→", title: "Наступна історія", note: "Повернутися до стіни імен" },
         ]}

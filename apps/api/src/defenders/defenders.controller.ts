@@ -22,6 +22,13 @@ export class DefendersController {
     return this.defenders.list({ q, unitId, regionId, limit: Number(limit) || 20 });
   }
 
+  // GET /defenders/facets — списки для фільтрів реєстру (частина, район)
+  // ПЕРЕД ":pid" — інакше "facets" перехопить :pid-роут як значення pid.
+  @Get("facets")
+  facets() {
+    return this.defenders.facets();
+  }
+
   // GET /defenders/{pid}
   @Get(":pid")
   getOne(@Param("pid") pid: string) {

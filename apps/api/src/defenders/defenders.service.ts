@@ -105,6 +105,23 @@ export class DefendersService {
     };
   }
 
+  /** Списки для фільтрів реєстру — лише частини й райони, які реально в когось є. */
+  async facets() {
+    const [units, regions] = await Promise.all([
+      this.prisma.unit.findMany({
+        where: { defenders: { some: { status: "published" } } },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      }),
+      this.prisma.region.findMany({
+        where: { level: 2, defenders: { some: { status: "published" } } },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      }),
+    ]);
+    return { units, regions };
+  }
+
   async getByPid(pid: string): Promise<DefenderDto> {
     const d = await this.prisma.defender.findUnique({
       where: { pid },

@@ -60,6 +60,17 @@ export async function fetchDefenderByPid(pid: string): Promise<Result<DefenderDe
   return get<DefenderDetail>(`/defenders/${encodeURIComponent(pid)}`);
 }
 
+export interface Facets {
+  units: { id: string; name: string }[];
+  regions: { id: string; name: string }[];
+}
+
+/** Списки для фільтрів реєстру — лише частини й райони, які реально в когось є. */
+export async function fetchFacets(): Promise<Facets> {
+  const r = await get<Facets>("/defenders/facets", 300);
+  return r.ok ? r.data : { units: [], regions: [] };
+}
+
 export interface Stats {
   total: number;
   verified: number;
