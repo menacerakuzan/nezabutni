@@ -24,16 +24,6 @@ const TYPE_LABEL: Record<string, string> = {
   frontline_segment: "Лінія фронту",
   alley_of_glory: "Алея слави",
 };
-const TYPE_PHOTO: Record<string, string> = {
-  battle: MEDIA.bwCeremony,
-  memorial: MEDIA.redCandles,
-  burial: MEDIA.winterGrave,
-  monument: MEDIA.framedPhoto,
-  museum_site: MEDIA.chapelCandles,
-  frontline_segment: MEDIA.march,
-  alley_of_glory: MEDIA.odesaFlags,
-};
-
 // Приглушений темний стиль CARTO — тимчасовий, до власного тайл-сервера.
 const STYLE_URL = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 
@@ -287,11 +277,17 @@ export function MapView() {
       {selected && (
         <div className="absolute bottom-4 right-4 w-[min(88vw,320px)] overflow-hidden rounded-[4px] border border-hair-strong bg-[#0B0F16]/95 backdrop-blur-md">
           <div className="relative h-36">
-            <img
-              src={selected.cover_media_id ? `${API_URL}/media/file/${selected.cover_media_id}` : (TYPE_PHOTO[selected.place_type] ?? MEDIA.redCandles)}
-              alt=""
-              className="h-full w-full object-cover [filter:saturate(0.55)_brightness(0.8)]"
-            />
+            {selected.cover_media_id ? (
+              <img
+                src={`${API_URL}/media/file/${selected.cover_media_id}`}
+                alt=""
+                className="h-full w-full object-cover [filter:saturate(0.55)_brightness(0.8)]"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center bg-white/[0.03]">
+                <p className="px-6 text-center text-xs text-ink-faint">Фото ще не додано</p>
+              </div>
+            )}
             <button
               onClick={() => setSelected(null)}
               aria-label="Закрити"
