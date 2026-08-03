@@ -125,9 +125,9 @@ function HomeBlock({
     case "FullscreenQuote":
       return (
         <FullscreenQuote
-          quote={(props.quote as string) ?? "Коли мене запитують, що таке війна, я без роздуму відповім: імена."}
-          author={(props.author as string) ?? "Максим Кривцов"}
-          role={(props.role as string) ?? "поет і воїн"}
+          quote={(props.quote as string) ?? "Війна забирає обличчя, голоси, дні. Лишається одне, чого вона не забирає, — ім’я."}
+          author={(props.author as string) ?? "Незабутні"}
+          role={(props.role as string) ?? "меморіал Одеської області"}
         />
       );
 

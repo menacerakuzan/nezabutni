@@ -870,19 +870,13 @@ export function FieldOfLights({ real, focusPid }: { real: RealLight[]; focusPid?
         </p>
       </div>
 
-      {/* Легенда */}
+      {/* Підказка керування */}
       <div
         className={`pointer-events-none absolute bottom-24 left-6 transition-opacity duration-700 md:left-10 ${
           immersed ? "opacity-0" : "opacity-100"
         }`}
       >
-        <div className="rounded-[3px] border border-hair bg-[#0A0C12]/90 px-4 py-3">
-          <p className="text-xs font-medium text-cream">
-            <span className="mr-2 inline-block h-2 w-2 rounded-full bg-gold align-middle shadow-[0_0_6px_rgba(223,155,59,0.9)]" />
-            Мапа Одеської області · вогні над рідними містами
-          </p>
-        </div>
-        <p className="mt-3 text-xs text-ink-lo">
+        <p className="text-xs text-ink-lo">
           Тягніть, щоб рухатися · ⌘/Ctrl + колесо або подвійний клік — наближення
         </p>
       </div>

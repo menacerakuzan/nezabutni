@@ -1,6 +1,14 @@
 import { IsIn, IsLatitude, IsLongitude, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
 
-const PLACE_TYPES = ["battle", "memorial", "burial", "monument", "museum_site", "frontline_segment"];
+const PLACE_TYPES = [
+  "battle",
+  "memorial",
+  "burial",
+  "monument",
+  "museum_site",
+  "frontline_segment",
+  "alley_of_glory",
+];
 
 export class CreatePlaceDto {
   @IsIn(PLACE_TYPES)

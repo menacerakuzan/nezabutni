@@ -28,6 +28,7 @@ const TYPES = [
   { value: "monument", label: "Пам’ятник" },
   { value: "museum_site", label: "Музейна локація" },
   { value: "frontline_segment", label: "Лінія фронту" },
+  { value: "alley_of_glory", label: "Алея слави" },
 ];
 
 export default function AdminPlacesPage() {

@@ -1,4 +1,4 @@
-import { IsBoolean, IsInt, IsOptional, Max, Min } from "class-validator";
+import { IsBoolean, IsInt, IsObject, IsOptional, Max, Min } from "class-validator";
 
 export class UpdatePageBlockDto {
   @IsBoolean()
@@ -10,4 +10,8 @@ export class UpdatePageBlockDto {
   @Max(999)
   @IsOptional()
   sortOrder?: number;
+
+  @IsObject()
+  @IsOptional()
+  props?: Record<string, unknown>;
 }

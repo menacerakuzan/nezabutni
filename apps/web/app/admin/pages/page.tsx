@@ -16,6 +16,7 @@ interface Block {
   label: string;
   sortOrder: number;
   visible: boolean;
+  props?: Record<string, unknown> | null;
 }
 
 // Наразі в page_block заповнена лише «Головна» (prisma/seed-cms.ts).
@@ -37,6 +38,8 @@ export default function AdminPagesPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null); // id блока, що зараз зберігається
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
 
   const load = useCallback(async (p: string) => {
     setLoading(true);
@@ -114,6 +117,33 @@ export default function AdminPagesPage() {
     }
   }
 
+  function startEdit(b: Block) {
+    const strings: Record<string, string> = {};
+    for (const [k, v] of Object.entries(b.props ?? {})) {
+      if (typeof v === "string") strings[k] = v;
+    }
+    setDraft(strings);
+    setEditingId(b.id);
+  }
+
+  async function saveProps(b: Block) {
+    setSaving(b.id);
+    const nextProps = { ...(b.props ?? {}), ...draft };
+    const res = await authFetch(`/site/admin/blocks/${b.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ props: nextProps }),
+    });
+    setSaving(null);
+    if (res.ok) {
+      setBlocks(blocks.map((x) => (x.id === b.id ? { ...x, props: nextProps } : x)));
+      setEditingId(null);
+      flashSaved();
+    } else {
+      setError("Не вдалося зберегти текст блока.");
+    }
+  }
+
   return (
     <div>
       <header className="flex flex-wrap items-end justify-between gap-4">
@@ -158,13 +188,19 @@ export default function AdminPagesPage() {
 
       {!error && blocks.length > 0 && (
         <ul className="mt-6 space-y-1.5">
-          {blocks.map((b, i) => (
+          {blocks.map((b, i) => {
+            const textProps = Object.entries(b.props ?? {}).filter(([, v]) => typeof v === "string") as [
+              string,
+              string,
+            ][];
+            return (
             <li
               key={b.id}
-              className={`flex items-center gap-3 rounded-[4px] border border-hair px-4 py-3 transition-opacity ${
+              className={`flex flex-col gap-3 rounded-[4px] border border-hair px-4 py-3 transition-opacity ${
                 b.visible ? "bg-white/[0.02]" : "opacity-45"
               } ${saving === b.id || saving === "reorder" ? "opacity-70" : ""}`}
             >
+              <div className="flex items-center gap-3">
               <span className="w-6 text-center font-mono text-xs text-ink-faint">{i + 1}</span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-cream">{b.label}</p>
@@ -186,6 +222,15 @@ export default function AdminPagesPage() {
               >
                 ↓
               </button>
+              {textProps.length > 0 && (
+                <button
+                  onClick={() => (editingId === b.id ? setEditingId(null) : startEdit(b))}
+                  disabled={!!saving}
+                  className="rounded border border-hair px-2 py-1 text-xs text-ink hover:text-cream disabled:opacity-30"
+                >
+                  {editingId === b.id ? "Скасувати" : "Редагувати текст"}
+                </button>
+              )}
               <button
                 onClick={() => toggle(b)}
                 disabled={!!saving}
@@ -193,8 +238,40 @@ export default function AdminPagesPage() {
               >
                 {b.visible ? "Приховати" : "Показати"}
               </button>
+              </div>
+              {editingId === b.id && (
+                <div className="space-y-3 border-t border-hair pt-3">
+                  {textProps.map(([key]) => (
+                    <div key={key}>
+                      <label className="block font-mono text-[11px] text-ink-lo">{key}</label>
+                      <textarea
+                        value={draft[key] ?? ""}
+                        onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+                        rows={key === "quote" ? 3 : 1}
+                        className="mt-1 w-full rounded border border-hair bg-void px-3 py-2 text-sm text-cream focus:border-cream focus:outline-none"
+                      />
+                    </div>
+                  ))}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveProps(b)}
+                      disabled={saving === b.id}
+                      className="rounded border border-cream bg-white/[0.06] px-3 py-1.5 text-xs font-semibold text-cream disabled:opacity-40"
+                    >
+                      Зберегти
+                    </button>
+                    <button
+                      onClick={() => setEditingId(null)}
+                      className="rounded border border-hair px-3 py-1.5 text-xs text-ink hover:text-cream"
+                    >
+                      Скасувати
+                    </button>
+                  </div>
+                </div>
+              )}
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
 

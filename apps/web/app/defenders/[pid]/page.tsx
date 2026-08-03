@@ -37,8 +37,8 @@ export default async function DefenderProfilePage({
   return (
     <>
       {/* Зала пам’яті */}
-      <section className="mx-auto max-w-6xl px-6 pb-16 pt-28">
-        <div className="grid gap-10 md:grid-cols-[minmax(0,380px)_1fr] md:gap-16">
+      <section className="mx-auto max-w-7xl px-6 pb-16 pt-28">
+        <div className="grid gap-10 md:grid-cols-[minmax(0,460px)_1fr] md:gap-20">
           <Reveal>
             {defender.portraitUrl ? (
               <MediaFrame
@@ -59,7 +59,7 @@ export default async function DefenderProfilePage({
             )}
           </Reveal>
           <Reveal delay={0.08}>
-            <div className="flex h-full flex-col justify-end">
+            <div className="flex h-full flex-col justify-end md:pl-4">
               <span className="caption">Захисник України</span>
               <h1 className="mt-4 font-display text-5xl font-semibold uppercase leading-[0.98] text-cream md:text-7xl">
                 {defender.fullName}

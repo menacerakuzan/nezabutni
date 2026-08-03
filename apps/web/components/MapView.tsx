@@ -22,6 +22,7 @@ const TYPE_LABEL: Record<string, string> = {
   monument: "Пам’ятник",
   museum_site: "Музейна локація",
   frontline_segment: "Лінія фронту",
+  alley_of_glory: "Алея слави",
 };
 const TYPE_PHOTO: Record<string, string> = {
   battle: MEDIA.bwCeremony,
@@ -30,6 +31,7 @@ const TYPE_PHOTO: Record<string, string> = {
   monument: MEDIA.framedPhoto,
   museum_site: MEDIA.chapelCandles,
   frontline_segment: MEDIA.march,
+  alley_of_glory: MEDIA.odesaFlags,
 };
 
 // Приглушений темний стиль CARTO — тимчасовий, до власного тайл-сервера.
@@ -201,7 +203,7 @@ export function MapView() {
 
       {/* фільтри типів */}
       <div className="absolute left-4 top-14 flex max-w-[70%] flex-wrap gap-1.5">
-        {(["battle", "memorial", "monument", "museum_site"] as const).map((t) => {
+        {(["battle", "memorial", "monument", "museum_site", "alley_of_glory"] as const).map((t) => {
           const label = TYPE_LABEL[t]!;
           return (
           <button

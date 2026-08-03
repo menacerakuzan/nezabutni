@@ -139,9 +139,16 @@ export class SiteService {
     return this.prisma.pageBlock.findMany({ where: { page }, orderBy: { sortOrder: "asc" } });
   }
 
-  async updatePageBlock(id: string, data: { visible?: boolean; sortOrder?: number }, actorId: string) {
+  async updatePageBlock(
+    id: string,
+    data: { visible?: boolean; sortOrder?: number; props?: Record<string, unknown> },
+    actorId: string,
+  ) {
     try {
-      const block = await this.prisma.pageBlock.update({ where: { id }, data });
+      const block = await this.prisma.pageBlock.update({
+        where: { id },
+        data: { ...data, props: data.props as Prisma.InputJsonValue | undefined },
+      });
       await this.audit.log({ actorId, action: "block.update", entityType: "page_block", entityId: id, diff: data });
       return block;
     } catch (err) {
